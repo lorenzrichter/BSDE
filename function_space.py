@@ -39,10 +39,23 @@ class Linear(pt.nn.Module):
         return pt.mm(self.Q.inverse(), pt.mm(self.B.t(), pt.mm(self.F, x.t()))).t()
 
 
-class NN(pt.nn.Module):
+class Affine(pt.nn.Module):
     def __init__(self, d, lr):
+        super(Affine, self).__init__()
+        self.A = pt.nn.Parameter(pt.randn(d, d), requires_grad=True)
+        self.b = pt.nn.Parameter(pt.randn(1, d), requires_grad=True)
+        self.register_parameter('param A', self.A)
+        self.register_parameter('param b', self.b)
+        self.adam = pt.optim.Adam(self.parameters(), lr=lr)
+
+    def forward(self, x):
+        return pt.mm(self.A, x.t()).t() + self.b
+
+
+class NN(pt.nn.Module):
+    def __init__(self, d_in, d_out, lr):
         super(NN, self).__init__()
-        self.nn_dims = [d, 20, d] # [d, 40, 30, 30, 40, d]
+        self.nn_dims = [d_in, 20, d_out] # [d, 40, 30, 30, 40, d]
         self.W = [item for sublist in
                   [[pt.nn.Parameter(pt.randn(self.nn_dims[i], self.nn_dims[i + 1],
                                              requires_grad=True)),
@@ -73,9 +86,9 @@ class NN(pt.nn.Module):
 
 
 class DenseNet(pt.nn.Module):
-    def __init__(self, d, lr):
+    def __init__(self, d_in, d_out, lr):
         super(DenseNet, self).__init__()
-        self.nn_dims = [d, 30, 30, d]
+        self.nn_dims = [d_in, 30, 30, d_out]
         self.W = [item for sublist in
                   [[pt.nn.Parameter(pt.randn(sum(self.nn_dims[:i + 1]), self.nn_dims[i + 1],
                                              requires_grad=True) * 0.1),

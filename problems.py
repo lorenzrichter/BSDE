@@ -67,6 +67,9 @@ class LQGC():
                                       - pt.mm(pt.mm(pt.mm(pt.mm(self.F[n, :, :], self.B),
                                                           self.Q.inverse()), self.B.t()),
                                               self.F[n, :, :]) + self.P) * self.delta_t)
+        self.G = pt.zeros([self.N + 1])
+        for n in range(self.N, 0, -1):
+            self.G[n - 1] = self.G[n] - pt.trace(pt.mm(pt.mm(self.B, self.F[n, :, :]), self.B)) * self.delta_t
 
     def b(self, x):
         return pt.mm(self.A, x.t()).t()
@@ -84,6 +87,43 @@ class LQGC():
         n = int(np.ceil(t / self.delta_t))
         return -pt.mm(pt.mm(pt.mm(self.Q.inverse(), self.B.t()), self.F[n, :, :]), x.t()).t()
 
+    def v_true(self, x, t):
+        n = int(np.ceil(t / self.delta_t))
+        return -pt.mm(x, pt.mm(self.F[n, :, :], x.t())).t() + problem.G[n]
+
+
+class DoubleWell():
+    def __init__(self, name='Double well', d=1, T=5, alpha=1, beta=1):
+        self.name = name
+        self.d = d
+        self.T = T
+        self.alpha = alpha
+        self.beta = beta
+        self.B = pt.eye(self.d).to(device)
+
+        if self.d != 1:
+            print('The double well example is only implemented for d = 1.')
+
+    def V(self, x):
+        return self.beta * (x**2 - 1)**2
+
+    def grad_V(self, x):
+        return 4.0 * self.beta * x * (x**2 - 1)
+
+    def b(self, x):
+        return -self.grad_V(x)
+
+    def sigma(self, x):
+        return self.B
+
+    def h(self, t, x, y, z):
+        return 0.5 * pt.sum(z**2, dim=1)
+
+    def g(self, x):
+        return self.alpha * (x - 1)**2
+
+    def u_true(self, x, t):
+        return pt.tensor([[0.0]])
 
 class HeatEquation():
     def __init__(self, name='Heat equation', d=1, T=5):

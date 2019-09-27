@@ -1,6 +1,6 @@
 #pylint: disable=invalid-name, no-member, too-many-arguments, missing-docstring
 #pylint: disable=too-many-instance-attributes, not-callable, no-else-return
-#pylint: disable=inconsistent-return-statements
+#pylint: disable=inconsistent-return-statements, too-many-locals, too-many-return-statements
 
 
 from datetime import date
@@ -10,7 +10,7 @@ import os
 import time
 import torch as pt
 
-from function_space import Linear, NN, SingleParam
+from function_space import DenseNet, Linear, NN, SingleParam
 
 
 device = pt.device('cpu')
@@ -24,7 +24,7 @@ device = pt.device('cpu')
 
 class Solver():
 
-    def __init__(self, name, problem, lr=0.001, L=10000, K=50, delta_t=0.05,
+    def __init__(self, name, problem, lr=0.001, L=10000, K=50, delta_t=0.05, approx_method='control',
                  loss_method='variance', learn_Y_0=False, adaptive_forward_process=True,
                  early_stopping_time=10000, seed=42, save_results=False):
         self.problem = problem
@@ -43,20 +43,27 @@ class Solver():
         self.L = L # gradient steps
         self.K = K # batch size
 
-        # function approximation
-        self.Y_0 = SingleParam(lr=self.lr).to(device)
-        self.Z_n = [NN(d=self.d, lr=self.lr) for i in range(self.N)]
-        #self.Z_n = [Linear(d=self.d, B=problem.B, Q=problem.Q, lr=self.lr).to(device)
-        #            for i in range(self.N)]
-        self.Y_0.train()
-        for z_n in self.Z_n:
-            z_n.train()
-
         # learning properties
         self.loss_method = loss_method
+        self.approx_method = approx_method
         self.learn_Y_0 = learn_Y_0
         self.adaptive_forward_process = adaptive_forward_process
         self.early_stopping_time = early_stopping_time
+
+        # function approximation
+        pt.manual_seed(self.seed)
+        if self.approx_method == 'control':
+            self.Y_0 = SingleParam(lr=self.lr).to(device)
+            self.Z_n = [NN(d_in=self.d, d_out=self.d, lr=self.lr) for i in range(self.N)]    
+            self.Y_0.train()
+            for z_n in self.Z_n:
+                z_n.train()
+        elif self.approx_method == 'value_function':
+            self.Y_n = [DenseNet(d_in=self.d, d_out=1, lr=self.lr) for i in range(self.N)]
+            for y_n in self.Y_n:
+                y_n.train()
+        #self.Z_n = [Linear(d=self.d, B=problem.B, Q=problem.Q, lr=self.lr).to(device)
+        #            for i in range(self.N)]
 
         if self.loss_method == 'moment':
             self.learn_Y_0 = True
@@ -88,7 +95,7 @@ class Solver():
     def u_true(self, x, t):
         return self.problem.u_true(x, t)
 
-    def loss_function(self, X, Y, Z_sum):
+    def loss_function(self, X, Y, Z_sum, l):
         if self.loss_method == 'moment':
             return (Y - self.g(X)).pow(2).mean()
         elif self.loss_method == 'variance':
@@ -101,33 +108,50 @@ class Solver():
                     - double_int.mean() + 2 * u_int.mean() - (-u_int - self.g(X)).mean().pow(2))
         elif self.loss_method == 'functional':
             return ((Z_sum + self.g(X))).mean()
+        elif self.loss_method == 'var_CE':
+            if l < 1000:
+                return ((Z_sum + self.g(X))).mean()
+            return (Y - self.g(X)).pow(2).mean() - (Y - self.g(X)).mean().pow(2)
+            #return ((Z_sum + self.g(X))).mean() + (Y - self.g(X)).pow(2).mean() - (Y - self.g(X)).mean().pow(2)
 
     def initialize_training_data(self):
         X = pt.zeros([self.K, self.d]).to(device)
         Y = pt.zeros(self.K).to(device)
-        if self.learn_Y_0 is True:
+        if self.approx_method == 'value_function':
+            X = pt.autograd.Variable(X, requires_grad=True)
+            Y = self.Y_n[0](X)[:, 0]
+        elif self.learn_Y_0 is True:
             Y = self.Y_0(X)
         Z_sum = pt.zeros(self.K).to(device)
         u_L2 = pt.zeros(self.K).to(device)
         u_int = pt.zeros(self.K).to(device)
         u_W_int = pt.zeros(self.K).to(device)
         double_int = pt.zeros(self.K).to(device)
+
         xi = pt.randn(self.K, self.d, self.N + 1).to(device)
         return X, Y, Z_sum, u_L2, u_int, u_W_int, double_int, xi
 
     def zero_grad(self):
-        self.Y_0.adam.zero_grad()
-        for z_n in self.Z_n:
-            z_n.adam.zero_grad()
+        if self.approx_method == 'control':
+            self.Y_0.adam.zero_grad()
+            for z_n in self.Z_n:
+                z_n.adam.zero_grad()
+        elif self.approx_method == 'value_function':
+            for y_n in self.Y_n:
+                y_n.adam.zero_grad()
 
     def optimization_step(self):
-        self.Y_0.adam.step()
-        for z_n in self.Z_n:
-            z_n.adam.step()
+        if self.approx_method == 'control':
+            self.Y_0.adam.step()
+            for z_n in self.Z_n:
+                z_n.adam.step()
+        elif self.approx_method == 'value_function':
+            for y_n in self.Y_n:
+                y_n.adam.step()
 
-    def gradient_descent(self, X, Y, Z_sum):
+    def gradient_descent(self, X, Y, Z_sum, l, additional_loss):
         self.zero_grad()
-        loss = self.loss_function(X, Y, Z_sum)
+        loss = self.loss_function(X, Y, Z_sum, l) + additional_loss
         loss.backward()
         self.optimization_step()
         return loss
@@ -156,21 +180,34 @@ class Solver():
         with open(path_name, 'w') as f:
             json.dump(logs, f)
 
+    def compute_autodiff(self, Y_n, X):
+        Y_n_eval = Y_n(X).squeeze(1).sum()
+        Y_n_eval.backward(retain_graph=True)
+        Z, = pt.autograd.grad(Y_n_eval, X, create_graph=True)
+        Z = pt.mm(self.sigma(X), Z.t()).t()
+        return Z
+
     def train(self):
 
         pt.manual_seed(self.seed)
 
-        print('d = %d, L = %d, K = %d, delta_t = %.3f, lr = %.2e, %s, %s'
-              % (self.d, self.L, self.K, self.delta_t_np, self.lr, self.loss_method,
+        print('d = %d, L = %d, K = %d, delta_t = %.3f, lr = %.2e, %s, %s, %s'
+              % (self.d, self.L, self.K, self.delta_t_np, self.lr, self.approx_method, self.loss_method,
                  'adaptive' if self.adaptive_forward_process else ''))
 
         for l in range(self.L):
             t_0 = time.time()
 
             X, Y, Z_sum, u_L2, u_int, u_W_int, double_int, xi = self.initialize_training_data()
+            additional_loss = pt.zeros(self.K)
 
             for i in range(self.N):
-                Z = self.Z_n[i](X)
+                if self.approx_method == 'value_function':
+                    if i > 0:
+                        additional_loss += (self.Y_n[i](X)[:, 0] - Y).pow(2)
+                    Z = self.compute_autodiff(self.Y_n[i], X)
+                elif self.approx_method == 'control':
+                    Z = self.Z_n[i](X)
                 c = pt.zeros(self.d, 1).to(device)
                 if self.adaptive_forward_process is True:
                     c = -Z.t()
@@ -178,13 +215,13 @@ class Solver():
                      + pt.mm(xi[:, :, i + 1], self.sigma(X).t()) * self.sq_delta_t)
                 Y = (Y + (self.h(self.delta_t * i, X, Y, Z) + pt.mm(Z, c)[:, 0]) * self.delta_t
                      + pt.sum(Z * xi[:, :, i+1], dim=1) * self.sq_delta_t)
-                if self.loss_method == 'functional':
+                if self.loss_method in ['functional', 'var_CE']:
                     Z_sum += 0.5 * pt.sum(Z**2, 1) * self.delta_t
 
                 u_L2 += pt.sum((-Z - pt.tensor(self.u_true(X, i * self.delta_t_np)).float())**2
                                * self.delta_t, 1)
 
-            loss = self.gradient_descent(X, Y, Z_sum)
+            loss = self.gradient_descent(X, Y, Z_sum, l, additional_loss.mean())
 
             self.loss_log.append(loss.item())
             self.u_L2_loss.append(pt.mean(u_L2).item())
