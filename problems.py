@@ -3,7 +3,7 @@
 import numpy as np
 import torch as pt
 
-from scipy.linalg import expm
+from scipy.linalg import expm, inv
 
 
 device = pt.device('cpu')
@@ -14,7 +14,7 @@ device = pt.device('cpu')
 
 
 class LLGC():
-    def __init__(self, name='LQGC', d=1, off_diag=0, T=5):
+    def __init__(self, name='LLGC', d=1, off_diag=0, T=5):
         self.name = name
         self.d = d
         self.T = T
@@ -39,7 +39,19 @@ class LLGC():
 
     def u_true(self, x, t):
         return -self.sigma(x).numpy().T.dot(expm(self.A.numpy().T * (self.T - t)).dot(
-            self.alpha.numpy())[:, 0])
+            self.alpha.numpy()) * np.ones(x.shape).T)
+
+    def v_true(self, x, t):
+        Sigma_n = (0.5 * inv(self.A.numpy()).dot(expm(self.A.numpy() * self.T))
+                   .dot(self.sigma(np.zeros([self.d, self.d])))
+                   .dot(self.sigma(np.zeros([self.d, self.d])).t())
+                   .dot(expm(self.A.numpy().T * self.T))
+                   -0.5 * inv(self.A.numpy()).dot(expm(self.A.numpy() * t))
+                   .dot(self.sigma(np.zeros([self.d, self.d])))
+                   .dot(self.sigma(np.zeros([self.d, self.d])).t())
+                   .dot(expm(self.A.numpy().T * t)))
+        return ((expm(self.A.numpy() * (self.T - t)).dot(x.t()).T).dot(self.alpha.numpy())
+                - 0.5 * self.alpha.numpy().T.dot(Sigma_n.dot(self.alpha)))
 
 
 class LQGC():
@@ -69,7 +81,8 @@ class LQGC():
                                               self.F[n, :, :]) + self.P) * self.delta_t)
         self.G = pt.zeros([self.N + 1])
         for n in range(self.N, 0, -1):
-            self.G[n - 1] = self.G[n] - pt.trace(pt.mm(pt.mm(self.B, self.F[n, :, :]), self.B)) * self.delta_t
+            self.G[n - 1] = (self.G[n] - pt.trace(pt.mm(pt.mm(self.B, self.F[n, :, :]), self.B))
+                             * self.delta_t)
 
     def b(self, x):
         return pt.mm(self.A, x.t()).t()
@@ -89,7 +102,7 @@ class LQGC():
 
     def v_true(self, x, t):
         n = int(np.ceil(t / self.delta_t))
-        return -pt.mm(x, pt.mm(self.F[n, :, :], x.t())).t() + problem.G[n]
+        return -pt.mm(x, pt.mm(self.F[n, :, :], x.t())).t() + self.G[n]
 
 
 class DoubleWell():

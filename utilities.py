@@ -10,7 +10,7 @@ def plot_loss_logs(experiment_name, models):
     fig.suptitle('%s, d = %d' % (experiment_name, models[0].d))
 
     for model in models:
-        if 'functional' in model.name:
+        if 'functional' in model.name or 'CE' in model.name:
             ax[0].plot(np.array(model.loss_log) - np.min(np.array(model.loss_log)))
             ax[0].set_yscale('log')
         else:
@@ -23,28 +23,65 @@ def plot_loss_logs(experiment_name, models):
     ax[1].set_title(r'$\mathbb{E}\left[\|u - u^* \|^2_{L_2}\right]$')
     return fig
 
-def plot_solution(model, x, t, r=1):
-    model.Y_0.eval()
-    for z_n in model.Z_n:
-        z_n.eval()
+def plot_solution(model, x, t, components, ylims=None):
 
-    fig, ax = plt.subplots(1, 1, figsize=(7, 4))
+    n = int(np.ceil(t / model.delta_t_np))
+    t_range = np.linspace(0, model.T, model.N)
+    x_val = pt.linspace(-3, 3, 100)
 
-    if t == 'all':
-        t_range = np.linspace(0, model.T, model.N)
-        for j in range(r):
-            ax.plot(t_range, [model.u_true(x, i * model.delta_t_np)[0, j].item()
-                              for i in range(model.N)], label='true x_%d' % j)
-            ax.plot(t_range, [-model.Z_n[i].forward(x)[0, j].item() for i in range(model.N)], '--',
-                    label='approx x_%d' % j)
-    elif x == 'all':
-        n = int(np.ceil(t / model.delta_t_np))
-        x_range = pt.linspace(-3, 3, 100).repeat(model.d, 1).t()
-        for j in range(r):
-            ax.plot(x_range.numpy()[:, j], model.u_true(x_range, t)[:, j].numpy(),
-                    label='true x_%d' % j);
-            ax.plot(x_range.numpy()[:, j], -model.Z_n[n](x_range)[:, j].detach().numpy(), '--',
-                    label='approx x_%d' % j)
+    for phi in model.Phis:
+        phi.eval()
 
-    plt.legend()
+    if model.approx_method == 'control':
+        fig, ax = plt.subplots(1, 2, figsize=(10, 4))
+
+    elif model.approx_method == 'value_function':
+        fig, ax = plt.subplots(1, 4, figsize=(15, 4))
+
+    fig.suptitle(model.name)
+
+    X = pt.autograd.Variable(x_val.unsqueeze(1).repeat(1, model.d), requires_grad=True)
+
+    ax[0].set_title('control, t = %.2f' % t)
+    for j in components:
+        ax[0].plot(x_val.numpy(), model.u_true(x_val.unsqueeze(1).repeat(1, model.d), t)[j, :],
+                   label='true x_%d' % j)
+        ax[0].plot(x_val.numpy(), -model.Z_n(X, n).detach().numpy()[:, j], '--',
+                   label='approx x_%d' % j)
+    if ylims is not None:
+        ax[0].set_ylim(ylims[0][0], ylims[0][1])
+    ax[0].legend()
+
+    X = pt.autograd.Variable(pt.tensor([[x] * model.d]), requires_grad=True)
+
+    ax[1].set_title('control, x = %.2f' % x)
+    for j in components:
+        ax[1].plot(t_range, [model.u_true(X, n * model.delta_t_np)[j].item() for n in
+                             range(model.N)], label='true x_%d' % j)
+        ax[1].plot(t_range, [-model.Z_n(X, n)[0, j].item() for n in range(model.N)], '--',
+                   label='approx x_%d' % j)
+    if ylims is not None:
+        ax[1].set_ylim(ylims[1][0], ylims[1][1])
+
+    if model.approx_method == 'value_function':
+
+        X = pt.autograd.Variable(x_val.unsqueeze(1).repeat(1, model.d), requires_grad=True)
+
+        ax[2].set_title('value function, t = %.2f' % t)
+        ax[2].plot(x_val.numpy(), model.v_true(x_val.unsqueeze(1).repeat(1, model.d), t))
+        ax[2].plot(x_val.numpy(), model.Y_n(X, n)[:, 0].detach().numpy(), '--')
+        if ylims is not None:
+            ax[2].set_ylim(ylims[2][0], ylims[2][1])
+
+        X = pt.autograd.Variable(pt.tensor([[x] * model.d]), requires_grad=True)
+
+        ax[3].set_title('value function, x = %.2f' % x)
+        ax[3].plot(t_range, [model.v_true(X.detach(), n * model.delta_t_np).item()
+                             for n in range(model.N)])
+        ax[3].plot(t_range, [model.Y_n(X, n)[0, 0].detach().numpy() for n in range(model.N)], '--')
+        if ylims is not None:
+            ax[3].set_ylim(ylims[3][0], ylims[3][1])
+
+    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+
     return fig
