@@ -21,6 +21,7 @@ class LLGC():
         self.A = -pt.eye(self.d).to(device) + off_diag * pt.randn(self.d, self.d)
         self.B = pt.eye(self.d).to(device) + off_diag * pt.randn(self.d, self.d)
         self.alpha = pt.ones(self.d, 1).to(device)
+        self.X_0 = pt.zeros(self.d)
 
         if ~np.all(np.linalg.eigvals(self.A.numpy()) < 0):
             print('not all EV of A are negative')
@@ -63,6 +64,7 @@ class LQGC():
         self.B = pt.eye(self.d).to(device) + off_diag * pt.randn(self.d, self.d)
         self.delta_t = delta_t
         self.N = int(np.floor(self.T / self.delta_t))
+        self.X_0 = pt.zeros(self.d)
 
         if ~np.all(np.linalg.eigvals(self.A.numpy()) < 0):
             print('not all EV of A are negative')
@@ -98,7 +100,7 @@ class LQGC():
 
     def u_true(self, x, t):
         n = int(np.ceil(t / self.delta_t))
-        return -pt.mm(pt.mm(pt.mm(self.Q.inverse(), self.B.t()), self.F[n, :, :]), x.t()).t()
+        return -pt.mm(pt.mm(pt.mm(self.Q.inverse(), self.B.t()), self.F[n, :, :]), x.t()).detach().numpy()#.t()
 
     def v_true(self, x, t):
         n = int(np.ceil(t / self.delta_t))
@@ -113,6 +115,7 @@ class DoubleWell():
         self.alpha = alpha
         self.beta = beta
         self.B = pt.eye(self.d).to(device)
+        self.X_0 = -pt.ones(self.d)
 
         if self.d != 1:
             print('The double well example is only implemented for d = 1.')
@@ -136,7 +139,7 @@ class DoubleWell():
         return self.alpha * (x - 1)**2
 
     def u_true(self, x, t):
-        return pt.tensor([[0.0]])
+        return None
 
 class HeatEquation():
     def __init__(self, name='Heat equation', d=1, T=5):
@@ -146,6 +149,7 @@ class HeatEquation():
         self.A = pt.zeros(self.d).to(device)
         self.B = pt.eye(self.d).to(device)
         self.alpha = pt.ones(self.d, 1).to(device)
+        self.X_0 = pt.zeros(self.d)
 
         if ~np.all(np.linalg.eigvals(self.A.numpy()) < 0):
             print('not all EV of A are negative')
