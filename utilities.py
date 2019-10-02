@@ -10,15 +10,15 @@ def plot_loss_logs(experiment_name, models):
     fig.suptitle('%s, d = %d' % (experiment_name, models[0].d))
 
     for model in models:
-        if 'functional' in model.name or 'CE' in model.name:
-            ax[0].plot(np.array(model.loss_log) - np.min(np.array(model.loss_log)))
+        if 'entropy' in model.loss_method:
+            ax[0].plot(np.array(model.loss_log) - np.min(np.array(model.loss_log)), label=model.name)
             ax[0].set_yscale('log')
         else:
-            ax[0].plot(model.loss_log)
+            ax[0].plot(model.loss_log, label=model.name)
             ax[0].set_yscale('log')
         ax[1].plot(model.u_L2_loss, label=model.name)
-        ax[1].set_yscale('log')
-        ax[1].legend()
+    ax[1].set_yscale('log')
+    ax[0].legend()
     ax[0].set_title('loss')
     ax[1].set_title(r'$\mathbb{E}\left[\|u - u^* \|^2_{L_2}\right]$')
     return fig

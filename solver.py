@@ -33,6 +33,7 @@ class Solver():
         self.date = date.today().strftime('%Y-%m-%d')
         self.d = problem.d
         self.T = problem.T
+        self.X_0 = problem.X_0
 
         # hyperparameters
         self.seed = seed
@@ -53,7 +54,7 @@ class Solver():
         self.early_stopping_time = early_stopping_time
         if self.loss_method == 'moment':
             self.learn_Y_0 = True
-        if self.loss_method == 'CE':
+        if self.loss_method == 'relative_entropy':
             self.adaptive_forward_process = True
 
         # function approximation
@@ -63,18 +64,17 @@ class Solver():
         if self.approx_method == 'control':
             self.y_0 = SingleParam(lr=self.lr).to(device)
             if self.time_approx == 'outer':
-                self.z_n = [NN(d_in=self.d, d_out=self.d, lr=self.lr) for i in range(self.N)]
-                self.Phis = self.z_n + [self.y_0]
+                self.z_n = [DenseNet(d_in=self.d, d_out=self.d, lr=self.lr) for i in range(self.N)]
             elif self.time_approx == 'inner':
-                self.z_n = NN(d_in=self.d + 1, d_out=self.d, lr=self.lr)
-                self.Phis = [self.z_n, self.y_0]
+                self.z_n = DenseNet(d_in=self.d + 1, d_out=self.d, lr=self.lr)
 
         elif self.approx_method == 'value_function':
             if self.time_approx == 'outer':
                 self.y_n = [DenseNet(d_in=self.d, d_out=1, lr=self.lr) for i in range(self.N)]
             elif self.time_approx == 'inner':
                 self.y_n = [DenseNet(d_in=self.d + 1, d_out=1, lr=self.lr)]
-            self.Phis = self.y_n
+
+        self.update_Phis()
 
         for phi in self.Phis:
             phi.train()
@@ -107,6 +107,15 @@ class Solver():
     def v_true(self, x, t):
         return self.problem.v_true(x, t)
 
+    def update_Phis(self):
+        if self.approx_method == 'control':
+            if self.time_approx == 'outer':
+                self.Phis = self.z_n + [self.y_0]
+            elif self.time_approx == 'inner':
+                self.Phis = [self.z_n, self.y_0]
+        elif self.approx_method == 'value_function':
+            self.Phis = self.y_n
+
     def loss_function(self, X, Y, Z_sum, l):
         if self.loss_method == 'moment':
             return (Y - self.g(X)).pow(2).mean()
@@ -118,16 +127,16 @@ class Solver():
         elif self.loss_method == 'variance_red_2':
             return ((-u_int - self.g(X)).pow(2).mean() + 2 * (self.g(X) * u_W_int).mean()
                     - double_int.mean() + 2 * u_int.mean() - (-u_int - self.g(X)).mean().pow(2))
-        elif self.loss_method == 'CE':
+        elif self.loss_method == 'relative_entropy':
             return ((Z_sum + self.g(X))).mean()
-        elif self.loss_method == 'var_CE':
+        elif self.loss_method == 'relative_entropy_variance':
             if l < 1000:
                 return ((Z_sum + self.g(X))).mean()
             return (Y - self.g(X)).pow(2).mean() - (Y - self.g(X)).mean().pow(2)
             #return ((Z_sum + self.g(X))).mean() + (Y - self.g(X)).pow(2).mean() - (Y - self.g(X)).mean().pow(2)
 
     def initialize_training_data(self):
-        X = pt.zeros([self.K, self.d]).to(device)
+        X = self.X_0.repeat(self.K, 1).to(device)
         if self.random_X_0 is True:
             X = pt.randn(self.K, self.d).to(device)
         Y = pt.zeros(self.K).to(device)
@@ -186,8 +195,8 @@ class Solver():
             json.dump(logs, f)
 
     def compute_grad_Y(self, X, n):
-        Y_n_eval = self.Y_n(X, n).squeeze(1).sum()
-        Y_n_eval.backward(retain_graph=True)
+        Y_n_eval = self.Y_n(X, n).squeeze(1).sum() # compare to Jacobi-Vector trick
+        Y_n_eval.backward(retain_graph=True) # do we need this?
         Z, = pt.autograd.grad(Y_n_eval, X, create_graph=True)
         Z = pt.mm(self.sigma(X), Z.t()).t()
         return Z
@@ -236,11 +245,12 @@ class Solver():
                      + pt.mm(xi[:, :, n + 1], self.sigma(X).t()) * self.sq_delta_t)
                 Y = (Y + (self.h(self.delta_t * n, X, Y, Z) + pt.mm(Z, c)[:, 0]) * self.delta_t
                      + pt.sum(Z * xi[:, :, n + 1], dim=1) * self.sq_delta_t)
-                if self.loss_method in ['CE', 'var_CE']:
+                if 'entropy' in self.loss_method:
                     Z_sum += 0.5 * pt.sum(Z**2, 1) * self.delta_t
 
-                u_L2 += pt.sum((-Z - pt.tensor(self.u_true(X, n * self.delta_t_np)).t().float())**2
-                               * self.delta_t, 1)
+                if self.u_true(X, n * self.delta_t_np) is not None:
+                    u_L2 += pt.sum((-Z - pt.tensor(self.u_true(X, n * self.delta_t_np)).t().float())**2
+                                   * self.delta_t, 1)
 
             loss = self.gradient_descent(X, Y, Z_sum, l, additional_loss.mean())
 
