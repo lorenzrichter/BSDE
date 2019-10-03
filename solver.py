@@ -34,6 +34,7 @@ class Solver():
         self.d = problem.d
         self.T = problem.T
         self.X_0 = problem.X_0
+        self.Y_0 = pt.tensor([0.0])
 
         # hyperparameters
         self.seed = seed
@@ -56,6 +57,8 @@ class Solver():
             self.learn_Y_0 = True
         if self.loss_method == 'relative_entropy':
             self.adaptive_forward_process = True
+        if self.loss_method == 'cross_entropy':
+            self.learn_Y_0 = False
 
         # function approximation
         self.Phis = []
@@ -128,7 +131,11 @@ class Solver():
             return ((-u_int - self.g(X)).pow(2).mean() + 2 * (self.g(X) * u_W_int).mean()
                     - double_int.mean() + 2 * u_int.mean() - (-u_int - self.g(X)).mean().pow(2))
         elif self.loss_method == 'relative_entropy':
-            return ((Z_sum + self.g(X))).mean()
+            return (Z_sum + self.g(X)).mean()
+        elif self.loss_method == 'cross_entropy':
+            if self.adaptive_forward_process is True:
+                return (Y * pt.exp(-self.g(X) + Y)).mean()
+            return (Y * pt.exp(-self.g(X))).mean()
         elif self.loss_method == 'relative_entropy_variance':
             if l < 1000:
                 return ((Z_sum + self.g(X))).mean()
@@ -139,7 +146,7 @@ class Solver():
         X = self.X_0.repeat(self.K, 1).to(device)
         if self.random_X_0 is True:
             X = pt.randn(self.K, self.d).to(device)
-        Y = pt.zeros(self.K).to(device)
+        Y = self.Y_0.repeat(self.K).to(device)
         if self.approx_method == 'value_function':
             X = pt.autograd.Variable(X, requires_grad=True)
             Y = self.Y_n(X, 0)[:, 0]
@@ -245,7 +252,7 @@ class Solver():
                      + pt.mm(xi[:, :, n + 1], self.sigma(X).t()) * self.sq_delta_t)
                 Y = (Y + (self.h(self.delta_t * n, X, Y, Z) + pt.mm(Z, c)[:, 0]) * self.delta_t
                      + pt.sum(Z * xi[:, :, n + 1], dim=1) * self.sq_delta_t)
-                if 'entropy' in self.loss_method:
+                if 'relative_entropy' in self.loss_method:
                     Z_sum += 0.5 * pt.sum(Z**2, 1) * self.delta_t
 
                 if self.u_true(X, n * self.delta_t_np) is not None:
