@@ -1,9 +1,14 @@
 #pylint: disable=invalid-name, no-member, too-many-arguments, missing-docstring
+#pylint: too-many-branches
 
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch as pt
+
+
+device = pt.device('cpu')
+
 
 def plot_loss_logs(experiment_name, models):
     fig, ax = plt.subplots(1, 2, figsize=(15, 3))
@@ -11,7 +16,8 @@ def plot_loss_logs(experiment_name, models):
 
     for model in models:
         if 'entropy' in model.loss_method:
-            ax[0].plot(np.array(model.loss_log) - np.min(np.array(model.loss_log)), label=model.name)
+            ax[0].plot(np.array(model.loss_log) - np.min(np.array(model.loss_log)),
+                       label=model.name)
             ax[0].set_yscale('log')
         else:
             ax[0].plot(model.loss_log, label=model.name)
@@ -31,6 +37,7 @@ def plot_solution(model, x, t, components, ylims=None):
 
     for phi in model.Phis:
         phi.eval()
+        phi.to(pt.device('cpu'))
 
     if model.approx_method == 'control':
         fig, ax = plt.subplots(1, 2, figsize=(10, 4))
@@ -88,30 +95,40 @@ def plot_solution(model, x, t, components, ylims=None):
 
     fig.tight_layout(rect=[0, 0.03, 1, 0.95])
 
+    for phi in model.Phis:
+        phi.to(device)
+
     return fig
 
-def do_importance_sampling(problem, model, K, control='approx'):
+def do_importance_sampling(problem, model, K, control='approx', verbose=True, delta_t=0.01):
 
     X = problem.X_0.repeat(K, 1)
-    Y = problem.X_0.repeat(K, 1)
+    X_u = problem.X_0.repeat(K, 1)
     ito_int = pt.zeros(K)
     riemann_int = pt.zeros(K)
 
-    for n in range(model.N):
+    sq_delta_t = np.sqrt(delta_t)
+    N = int(np.ceil(problem.T / delta_t))
+
+    for n in range(N):
         xi = pt.randn(K, problem.d)
-        X = (X + problem.b(X) * model.delta_t
-             + pt.mm(problem.sigma(X), xi.t()).t() * model.sq_delta_t)
+        X = (X + problem.b(X) * delta_t
+             + pt.mm(problem.sigma(X), xi.t()).t() * sq_delta_t)
         if control == 'approx':
-            ut = -model.Z_n(Y, n)
+            ut = -model.Z_n(X_u, n)
         if control == 'true':
-            ut = pt.tensor(problem.u_true(Y, n * model.delta_t_np)).t().float()
-        Y = (Y + (problem.b(Y) + pt.mm(problem.sigma(Y), ut.t()).t()) * model.delta_t
-             + pt.mm(problem.sigma(Y), xi.t()).t() * model.sq_delta_t)
-        ito_int += pt.sum(ut * xi, 1) * model.sq_delta_t
-        riemann_int += pt.sum(ut**2, 1) * model.delta_t
+            ut = pt.tensor(problem.u_true(X_u, n * delta_t)).t().float()
+        X_u = (X_u + (problem.b(X_u) + pt.mm(problem.sigma(X_u), ut.t()).t()) * delta_t
+               + pt.mm(problem.sigma(X_u), xi.t()).t() * sq_delta_t)
+        ito_int += pt.sum(ut * xi, 1) * sq_delta_t
+        riemann_int += pt.sum(ut**2, 1) * delta_t
 
     girsanov = pt.exp(- ito_int - 0.5 * riemann_int)
 
-    print('variance of naive estimator: %.4e' % pt.var(pt.exp(-problem.g(X))))
-    print('variance of importance sampling estimator: %.4e' % pt.var(pt.exp(-problem.g(Y))
-                                                                       * girsanov))
+    variance_naive = pt.var(pt.exp(-problem.g(X))).item()
+    variance_IS = pt.var(pt.exp(-problem.g(X_u)) * girsanov).item()
+
+    if verbose is True:
+        print('variance of naive estimator: %.4e' % variance_naive)
+        print('variance of importance sampling estimator: %.4e' % variance_IS)
+    return variance_naive, variance_IS

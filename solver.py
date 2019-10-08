@@ -1,6 +1,7 @@
 #pylint: disable=invalid-name, no-member, too-many-arguments, missing-docstring
 #pylint: disable=too-many-instance-attributes, not-callable, no-else-return
 #pylint: disable=inconsistent-return-statements, too-many-locals, too-many-return-statements
+#pylint: disable=too-many-statements
 
 
 from datetime import date
@@ -11,6 +12,7 @@ import time
 import torch as pt
 
 from function_space import DenseNet, Linear, NN, SingleParam
+from utilities import do_importance_sampling
 
 
 device = pt.device('cpu')
@@ -27,7 +29,8 @@ class Solver():
     def __init__(self, name, problem, lr=0.001, L=10000, K=50, delta_t=0.05,
                  approx_method='control', loss_method='variance', time_approx='outer',
                  learn_Y_0=False, adaptive_forward_process=True, early_stopping_time=10000,
-                 random_X_0=False, compute_gradient_variance=0, seed=42, save_results=False):
+                 random_X_0=False, compute_gradient_variance=0, IS_variance_K=0,
+                 metastability_logs=None, print_every=100, seed=42, save_results=False):
         self.problem = problem
         self.name = name
         self.date = date.today().strftime('%Y-%m-%d')
@@ -92,11 +95,14 @@ class Solver():
         self.u_L2_loss = []
         self.times = []
         self.grads_rel_error_log = []
+        self.particles_close_to_target = []
 
         # printing and logging
-        self.print_every = 100
+        self.print_every = print_every
         self.save_results = save_results
         self.compute_gradient_variance = compute_gradient_variance
+        self.IS_variance_K = IS_variance_K
+        self.metastability_logs = metastability_logs
 
     def b(self, x):
         return self.problem.b(x)
@@ -321,9 +327,9 @@ class Solver():
                     Z_sum += 0.5 * pt.sum(Z**2, 1) * self.delta_t
 
                 if self.u_true(X, n * self.delta_t_np) is not None:
-                    u_L2 += pt.sum((-Z 
+                    u_L2 += pt.sum((-Z
                                     - pt.tensor(self.u_true(X, n * self.delta_t_np)).t().float())**2
-                                    * self.delta_t, 1)
+                                   * self.delta_t, 1)
 
             if self.compute_gradient_variance > 0 and l % self.compute_gradient_variance == 0:
                 self.grads_rel_error_log.append(pt.mean(self.get_gradient_variances(X, Y)).item())
@@ -332,14 +338,23 @@ class Solver():
 
             self.loss_log.append(loss.item())
             self.u_L2_loss.append(pt.mean(u_L2).item())
+            if self.metastability_logs is not None:
+                target, epsilon = self.metastability_logs
+                self.particles_close_to_target.append(pt.mean((pt.sqrt(pt.sum((X - target)**2, 1)) <
+                                                               epsilon).float()))
 
             t_1 = time.time()
             self.times.append(t_1 - t_0)
 
             if l % self.print_every == 0:
-                print('%d - loss: %.4e - u-L2 loss: %.4e - time per iteration: %.2fs'
-                      % (l, self.loss_log[-1], self.u_L2_loss[-1],
-                         np.mean(self.times[-self.print_every:])))
+                string = ('%d - loss: %.4e - u L2: %.4e - time/iter: %.2fs'
+                          % (l, self.loss_log[-1], self.u_L2_loss[-1],
+                             np.mean(self.times[-self.print_every:])))
+                if self.IS_variance_K > 0:
+                    variance_naive, variance_IS = do_importance_sampling(self.problem, self, self.IS_variance_K,
+                                                                         control='approx', verbose=False)
+                    string += ' - var naive: %.4e - var IS: %.4e' % (variance_naive, variance_IS)
+                print(string)
 
             if self.early_stopping_time is not None:
                 if ((l > self.early_stopping_time) and
