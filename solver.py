@@ -310,7 +310,6 @@ class Solver():
 
             X, Y, Z_sum, u_L2, u_int, u_W_int, double_int, xi = self.initialize_training_data()
             additional_loss = pt.zeros(self.K)
-
             for n in range(self.N):
                 if self.approx_method == 'value_function':
                     if n > 0:
@@ -319,10 +318,8 @@ class Solver():
                 c = pt.zeros(self.d, 1).to(device)
                 if self.adaptive_forward_process is True:
                     c = -Z.t()
-                X = (X + (self.b(X) + pt.mm(self.sigma(X), c)[:, 0]) * self.delta_t
-                     + pt.mm(self.sigma(X), xi[:, :, n + 1].t()).t() * self.sq_delta_t)
-                Y = (Y + (self.h(self.delta_t * n, X, Y, Z) + pt.mm(Z, c)[:, 0]) * self.delta_t
-                     + pt.sum(Z * xi[:, :, n + 1], dim=1) * self.sq_delta_t)
+                X = X + (self.b(X) + pt.mm(self.sigma(X), c)[:, 0]) * self.delta_t + pt.mm(self.sigma(X), xi[:, :, n + 1].t()).t() * self.sq_delta_t
+                Y = Y + (self.h(self.delta_t * n, X, Y, Z) + pt.mm(Z, c)[:, 0]) * self.delta_t + pt.sum(Z * xi[:, :, n + 1], dim=1) * self.sq_delta_t
                 if 'relative_entropy' in self.loss_method:
                     Z_sum += 0.5 * pt.sum(Z**2, 1) * self.delta_t
 

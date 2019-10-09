@@ -229,3 +229,58 @@ class HeatEquation():
     def u_true(self, x, t):
         return -self.sigma(x).numpy().T.dot(expm(self.A.numpy().T * (self.T - t))
                                             .dot(self.alpha.numpy())[:, 0])
+
+class Mueller2d():
+    def __init__(self, name='Mueller potential', d=2, T=5, alpha=1, beta=1):
+
+        self.name = name
+        self.d = d
+        self.T = T
+        self.alpha = alpha
+        self.beta = beta
+        self.X_0 = pt.zeros(self.d).to(device)
+        self.B = pt.eye(self.d).to(device)
+
+        self.AA = [-20, -10, -17, 1.5] 
+        self.coeff_a = [-1, -1, -6.5, 0.7]
+        self.coeff_b = [0, 0, 11.0, 0.6]
+        self.coeff_c = [-10, -10, -6.5, 0.7]
+        self.xc = [1.0, 0.0, -0.5, -1.0]
+        self.yc = [0.0, 0.5, 1.5, 1.0]
+
+        if self.d != 2:
+            print('The Muller example is only for d = 2.')
+
+    def V(self, x):
+      s = 0 
+      for i in range(4):
+        dx = x[:,0] - self.xc[i] 
+        dy = x[:,1] - self.yc[i] 
+        s += self.AA[i] * exp(self.coeff_a[i] * dx * dx + self.coeff_b[i] * dx * dy + self.coeff_c[i] * dy * dy)      
+      return s
+
+    def grad_V(self, x):
+      grad = pt.zeros(x.shape[0], self.d) 
+      for i in range(4):
+        dx = x[:,0] - self.xc[i] 
+        dy = x[:,1] - self.yc[i] 
+        grad[:,0] += self.AA[i] * (2 * self.coeff_a[i] * dx + self.coeff_b[i] * dy) * exp(self.coeff_a[i] * dx * dx + self.coeff_b[i] * dx * dy + self.coeff_c[i] * dy * dy) 
+        grad[:,1] += self.AA[i] * (2 * self.coeff_c[i] * dy + self.coeff_b[i] * dx) * exp(self.coeff_a[i] * dx * dx + self.coeff_b[i] * dx * dy + self.coeff_c[i] * dy * dy)
+
+      return grad
+
+    def b(self, x):
+      return -1.0 * self.grad_V(x)
+
+    def sigma(self, x):
+        return self.B
+
+    def h(self, t, x, y, z):
+        return 0.5 * pt.sum(z**2, dim=1)
+
+    def g(self, x):
+        return self.alpha * (x - 1)**2
+
+    def u_true(self, x, t):
+        return pt.tensor([[0.0]])
+
