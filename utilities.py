@@ -1,5 +1,5 @@
 #pylint: disable=invalid-name, no-member, too-many-arguments, missing-docstring
-#pylint: too-many-branches
+#pylint: disable=too-many-branches
 
 
 import matplotlib.pyplot as plt
@@ -64,8 +64,8 @@ def plot_solution(model, x, t, components, ylims=None):
 
     ax[1].set_title('control, x = %.2f' % x)
     for j in components:
-        if model.u_true(X, n * model.delta_t_np) is not None:
-            ax[1].plot(t_range, [model.u_true(X, n * model.delta_t_np)[j].item() for n in
+        if model.u_true(X.detach(), n * model.delta_t_np) is not None:
+            ax[1].plot(t_range, [model.u_true(X.detach(), n * model.delta_t_np)[j].item() for n in
                                  range(model.N)], label='true x_%d' % j)
         ax[1].plot(t_range, [-model.Z_n(X, n)[0, j].item() for n in range(model.N)], '--',
                    label='approx x_%d' % j)
@@ -115,7 +115,7 @@ def do_importance_sampling(problem, model, K, control='approx', verbose=True, de
         X = (X + problem.b(X) * delta_t
              + pt.mm(problem.sigma(X), xi.t()).t() * sq_delta_t)
         if control == 'approx':
-            ut = -model.Z_n(X_u, n)
+            ut = -model.Z_n(X_u, int(np.floor(n * delta_t / model.delta_t)))
         if control == 'true':
             ut = pt.tensor(problem.u_true(X_u, n * delta_t)).t().float()
         X_u = (X_u + (problem.b(X_u) + pt.mm(problem.sigma(X_u), ut.t()).t()) * delta_t

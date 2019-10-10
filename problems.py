@@ -5,6 +5,7 @@ import torch as pt
 
 from numpy import exp, log
 
+from scipy import interpolate
 from scipy.linalg import expm, inv, solve_banded
 
 
@@ -127,40 +128,40 @@ class DoubleWell():
         self.xb = 5
         # number of discrete interval
         self.nx = 2500
-        dx = 2.0 * self.xb / self.nx
+        self.dx = 2.0 * self.xb / self.nx
 
-        beta = 1
+        beta = 2
 
-        xvec = np.linspace(-self.xb, self.xb, self.nx, endpoint=True)
+        self.xvec = np.linspace(-self.xb, self.xb, self.nx, endpoint=True)
 
         # A = D^{-1} L D
         # assumes Neumann boundary conditions
 
         A = np.zeros([self.nx, self.nx])
         for i in range(0, self.nx):
-            x = -self.xb + (i + 0.5) * dx
+            x = -self.xb + (i + 0.5) * self.dx
             if i > 0:
-                x0 = -self.xb + (i - 0.5) * dx
-                x1 = -self.xb + i * dx
-                A[i, i - 1] = -exp(beta * 0.5 * (self.V(x0) + self.V(x) - 2 * self.V(x1))) / dx**2
-                A[i, i] = exp(beta * (self.V(x) - self.V(x1))) / (dx**2)
+                x0 = -self.xb + (i - 0.5) * self.dx
+                x1 = -self.xb + i * self.dx
+                A[i, i - 1] = -exp(beta * 0.5 * (self.V(x0) + self.V(x) - 2 * self.V(x1))) / self.dx**2
+                A[i, i] = exp(beta * (self.V(x) - self.V(x1))) / self.dx**2
             if i < self.nx - 1:
-                x0 = -self.xb + (i + 1.5) * dx
-                x1 = -self.xb + (i + 1) * dx
-                A[i, i + 1] = -exp(beta * 0.5 * (self.V(x0) + self.V(x) - 2 * self.V(x1))) / dx**2
-                A[i, i] = A[i, i] + exp(beta * (self.V(x) - self.V(x1))) / dx**2
+                x0 = -self.xb + (i + 1.5) * self.dx
+                x1 = -self.xb + (i + 1) * self.dx
+                A[i, i + 1] = -exp(beta * 0.5 * (self.V(x0) + self.V(x) - 2 * self.V(x1))) / self.dx**2
+                A[i, i] = A[i, i] + exp(beta * (self.V(x) - self.V(x1))) / self.dx**2
 
         A = -A
         N = int(self.T / self.delta_t)
 
-        D = np.diag(exp(beta * self.V(xvec) / 2))
-        D_inv = np.diag(exp(-beta * self.V(xvec) / 2))
+        D = np.diag(exp(beta * self.V(self.xvec) / 2))
+        D_inv = np.diag(exp(-beta * self.V(self.xvec) / 2))
 
         np.linalg.cond(np.eye(self.nx) - self.delta_t * A)
         #w, vv = np.linalg.eigh(np.eye(self.nx) - self.delta_t * A)
 
         self.psi = np.zeros([N + 1, self.nx])
-        self.psi[N, :] = exp(-self.g(xvec))
+        self.psi[N, :] = exp(-self.g(self.xvec))
 
         for n in range(N - 1, -1, -1):
             band = - delta_t * np.vstack([np.append([0], np.diagonal(A, offset=1)),
@@ -173,8 +174,8 @@ class DoubleWell():
         self.u = np.zeros([N + 1, self.nx - 1])
         for n in range(N + 1):
             for i in range(self.nx - 1):
-                self.u[n, i] = -self.B * (- log(self.psi[n, i + 1]) + log(self.psi[n, i])) / dx
-        self.u = pt.tensor(self.u)
+                self.u[n, i] = -2 / beta * self.B * (- log(self.psi[n, i + 1]) + log(self.psi[n, i])) / self.dx
+        #self.u = 2 / beta * np.gradient(np.log(self.psi), self.dx, 1)
 
     def V(self, x):
         return self.beta * (x**2 - 1)**2
@@ -195,10 +196,11 @@ class DoubleWell():
         return self.alpha * (x - 1)**2
 
     def u_true(self, x, t):
-        i = pt.floor((x.squeeze() + self.xb) * 250).long()
+        i = np.floor((x.squeeze(0) + self.xb) / self.dx).long()
         i[-1] -= 2
         n = int(np.ceil(t / self.delta_t))
-        return self.u[n, i].unsqueeze(0)
+        return np.array(self.u[n, i]).reshape([1, len(i)])
+        #return interpolate.interp1d(self.xvec, self.u)(x)[:, n]
 
 
 class HeatEquation():

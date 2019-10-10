@@ -326,9 +326,9 @@ class Solver():
                 if 'relative_entropy' in self.loss_method:
                     Z_sum += 0.5 * pt.sum(Z**2, 1) * self.delta_t
 
-                if self.u_true(X, n * self.delta_t_np) is not None:
+                if self.u_true(X.detach(), n * self.delta_t_np) is not None:
                     u_L2 += pt.sum((-Z
-                                    - pt.tensor(self.u_true(X, n * self.delta_t_np)).t().float())**2
+                                    - pt.tensor(self.u_true(X.detach(), n * self.delta_t_np)).t().float())**2
                                    * self.delta_t, 1)
 
             if self.compute_gradient_variance > 0 and l % self.compute_gradient_variance == 0:
