@@ -1,7 +1,6 @@
 #pylint: disable=invalid-name, no-member, too-many-arguments, missing-docstring
 #pylint: too-many-branches
 
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch as pt
@@ -112,23 +111,23 @@ def do_importance_sampling(problem, model, K, control='approx', verbose=True, de
 
     for n in range(N):
         xi = pt.randn(K, problem.d)
-        X = (X + problem.b(X) * delta_t
-             + pt.mm(problem.sigma(X), xi.t()).t() * sq_delta_t)
+        X = X + problem.b(X) * delta_t + pt.bmm(problem.sigma(X), xi.unsqueeze(2)).squeeze(2) * sq_delta_t
         if control == 'approx':
             ut = -model.Z_n(X_u, n)
         if control == 'true':
-            ut = pt.tensor(problem.u_true(X_u, n * delta_t)).t().float()
-        X_u = (X_u + (problem.b(X_u) + pt.mm(problem.sigma(X_u), ut.t()).t()) * delta_t
-               + pt.mm(problem.sigma(X_u), xi.t()).t() * sq_delta_t)
+            ut = pt.tensor(problem.u_true(X_u, n * delta_t).float())
+        X_u = X_u + (problem.b(X_u) + pt.bmm(problem.sigma(X_u), ut.unsqueeze(2)).squeeze(2)) * delta_t + pt.bmm(problem.sigma(X_u), xi.unsqueeze(2)).squeeze(2) * sq_delta_t
         ito_int += pt.sum(ut * xi, 1) * sq_delta_t
         riemann_int += pt.sum(ut**2, 1) * delta_t
 
     girsanov = pt.exp(- ito_int - 0.5 * riemann_int)
 
+    mean_naive = pt.mean(pt.exp(-problem.g(X))).item()
     variance_naive = pt.var(pt.exp(-problem.g(X))).item()
+    mean_IS = pt.mean(pt.exp(-problem.g(X_u)) * girsanov).item()
     variance_IS = pt.var(pt.exp(-problem.g(X_u)) * girsanov).item()
 
     if verbose is True:
-        print('variance of naive estimator: %.4e' % variance_naive)
-        print('variance of importance sampling estimator: %.4e' % variance_IS)
+        print('(mean, variance) of naive estimator: (%.4e, %.4e)' % (mean_naive, variance_naive))
+        print('(mean, variance) of importance sampling estimator: (%.4e, %.4e)' % (mean_IS, variance_IS))
     return variance_naive, variance_IS

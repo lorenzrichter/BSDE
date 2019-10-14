@@ -110,7 +110,7 @@ class LQGC():
 
 
 class DoubleWell():
-    def __init__(self, name='Double well', d=1, T=5, delta_t=0.01, alpha=1, beta=1):
+    def __init__(self, name='Double well', d=1, T=5, delta_t=0.005, alpha=1, beta=1):
         self.name = name
         self.d = d
         self.T = T
@@ -124,12 +124,12 @@ class DoubleWell():
             print('The double well example is only implemented for d = 1.')
 
         # range of x, [-xb, xb]
-        self.xb = 5
+        self.xb = 2.5
         # number of discrete interval
-        self.nx = 2500
+        self.nx = 1000
         dx = 2.0 * self.xb / self.nx
 
-        beta = 1
+        beta = 2
 
         xvec = np.linspace(-self.xb, self.xb, self.nx, endpoint=True)
 
@@ -150,30 +150,26 @@ class DoubleWell():
                 A[i, i + 1] = -exp(beta * 0.5 * (self.V(x0) + self.V(x) - 2 * self.V(x1))) / dx**2
                 A[i, i] = A[i, i] + exp(beta * (self.V(x) - self.V(x1))) / dx**2
 
-        A = -A
+        A = -A / beta
         N = int(self.T / self.delta_t)
 
         D = np.diag(exp(beta * self.V(xvec) / 2))
         D_inv = np.diag(exp(-beta * self.V(xvec) / 2))
 
-        np.linalg.cond(np.eye(self.nx) - self.delta_t * A)
-        #w, vv = np.linalg.eigh(np.eye(self.nx) - self.delta_t * A)
-
         self.psi = np.zeros([N + 1, self.nx])
         self.psi[N, :] = exp(-self.g(xvec))
 
-        for n in range(N - 1, -1, -1):
-            band = - delta_t * np.vstack([np.append([0], np.diagonal(A, offset=1)),
-                                          np.diagonal(A, offset=0) - N / self.T,
-                                          np.append(np.diagonal(A, offset=1), [0])])
+        band = - delta_t * np.vstack([np.append([0], np.diagonal(A, offset=1)),
+                                      np.diagonal(A, offset=0) - N / self.T,
+                                      np.append(np.diagonal(A, offset=1), [0])])
 
+        for n in range(N - 1, -1, -1):
             self.psi[n, :] = D.dot(solve_banded([1, 1], band, D_inv.dot(self.psi[n + 1, :])))
-            #psi[n, :] = np.dot(D, np.linalg.solve(np.eye(self.nx) - delta_t * A, D_inv.dot(psi[n + 1, :])));
 
         self.u = np.zeros([N + 1, self.nx - 1])
         for n in range(N + 1):
             for i in range(self.nx - 1):
-                self.u[n, i] = -self.B * (- log(self.psi[n, i + 1]) + log(self.psi[n, i])) / dx
+                self.u[n, i] = -1.0 * self.B * (-log(self.psi[n, i + 1]) + log(self.psi[n, i])) / dx
         self.u = pt.tensor(self.u)
 
     def V(self, x):
@@ -186,20 +182,20 @@ class DoubleWell():
         return -self.grad_V(x)
 
     def sigma(self, x):
-        return self.B
+        return self.B.repeat(x.shape[0],1,1)
 
     def h(self, t, x, y, z):
         return 0.5 * pt.sum(z**2, dim=1)
 
     def g(self, x):
-        return self.alpha * (x - 1)**2
+        return (self.alpha * (x - 1)**2).squeeze()
 
     def u_true(self, x, t):
-        i = pt.floor((x.squeeze() + self.xb) * 250).long()
+        dx = 2.0 * self.xb / self.nx
+        i = pt.floor((x.squeeze() + self.xb) / dx).long()
         i[-1] -= 2
         n = int(np.ceil(t / self.delta_t))
-        return self.u[n, i].unsqueeze(0)
-
+        return self.u[n, i].unsqueeze(1)
 
 class HeatEquation():
     def __init__(self, name='Heat equation', d=1, T=5):

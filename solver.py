@@ -3,7 +3,6 @@
 #pylint: disable=inconsistent-return-statements, too-many-locals, too-many-return-statements
 #pylint: disable=too-many-statements
 
-
 from datetime import date
 import json
 import numpy as np
@@ -14,9 +13,7 @@ import torch as pt
 from function_space import DenseNet, Linear, NN, SingleParam
 from utilities import do_importance_sampling
 
-
 device = pt.device('cpu')
-
 
 # to do:
 # - flexible learning rate, line search?
@@ -30,7 +27,7 @@ class Solver():
                  approx_method='control', loss_method='variance', time_approx='outer',
                  learn_Y_0=False, adaptive_forward_process=True, early_stopping_time=10000,
                  random_X_0=False, compute_gradient_variance=0, IS_variance_K=0,
-                 metastability_logs=None, print_every=100, seed=42, save_results=False):
+                 metastability_logs=None, print_every=100, seed=52, save_results=False):
         self.problem = problem
         self.name = name
         self.date = date.today().strftime('%Y-%m-%d')
@@ -66,7 +63,7 @@ class Solver():
         # function approximation
         self.Phis = []
         self.time_approx = time_approx
-        pt.manual_seed(self.seed)
+#        pt.manual_seed(self.seed)
         if self.approx_method == 'control':
             self.y_0 = SingleParam(lr=self.lr).to(device)
             if self.time_approx == 'outer':
@@ -155,6 +152,7 @@ class Solver():
             #return ((Z_sum + self.g(X))).mean() + (Y - self.g(X)).pow(2).mean() - (Y - self.g(X)).mean().pow(2)
 
     def initialize_training_data(self):
+        # size: k x d
         X = self.X_0.repeat(self.K, 1).to(device)
         if self.random_X_0 is True:
             X = pt.randn(self.K, self.d).to(device)
@@ -171,8 +169,7 @@ class Solver():
         u_W_int = pt.zeros(self.K).to(device)
         double_int = pt.zeros(self.K).to(device)
 
-        xi = pt.randn(self.K, self.d, self.N + 1).to(device)
-        return X, Y, Z_sum, u_L2, u_int, u_W_int, double_int, xi
+        return X, Y, Z_sum, u_L2, u_int, u_W_int, double_int 
 
     def zero_grad(self):
         for phi in self.Phis:
@@ -197,55 +194,6 @@ class Solver():
             grads_flat[k, i:i + j] = grad_flat
             i += j
         return grads_flat
-
-    def get_gradient_variances(self, X, Y):
-        grads_mean = pt.zeros(self.N, self.p)
-        grads_var = pt.zeros(self.N, self.p)
-
-        for n in range(self.N):
-
-            grads_Y_flat = pt.zeros(self.K, self.p)
-
-            for k in range(self.K):
-                self.zero_grad()
-                Y[k].backward(retain_graph=True)
-
-                grad_Y = [params.grad for params in list(filter(lambda params:
-                                                                params.requires_grad,
-                                                                self.z_n[n].parameters()))
-                          if params.grad is not None]
-
-                grads_Y_flat = self.flatten_gradient(k, grad_Y, grads_Y_flat)
-
-            grads_g_X_flat = pt.zeros(self.K, self.p)
-
-            if self.adaptive_forward_process is True:
-
-                for k in range(self.K):
-                    self.zero_grad()
-                    self.g(X[0, :].unsqueeze(0)).backward(retain_graph=True)
-
-                    grad_g_X = [params.grad for params in list(filter(lambda params:
-                                                                      params.requires_grad,
-                                                                      self.z_n[n].parameters()))
-                                if params.grad is not None]
-
-                    grads_g_X_flat = self.flatten_gradient(k, grad_g_X, grads_g_X_flat)
-
-            if self.loss_method == 'moment':
-                grads_flat = 2 * (Y - self.g(X)).unsqueeze(1) * (grads_Y_flat - grads_g_X_flat)
-            elif self.loss_method == 'variance':
-                grads_flat = 2 * (((Y - self.g(X)).unsqueeze(1)
-                                   - pt.mean((Y - self.g(X)).unsqueeze(1), 0).unsqueeze(0))
-                                  * (grads_Y_flat - grads_g_X_flat
-                                     - pt.mean(grads_Y_flat - grads_g_X_flat, 0).unsqueeze(0)))
-
-            grads_mean[n, :] = pt.mean(grads_flat, dim=0)
-            grads_var[n, :] = pt.var(grads_flat, dim=0)
-
-        grads_rel_error = pt.sqrt(grads_var) / grads_mean
-        grads_rel_error[grads_rel_error != grads_rel_error] = 0
-        return grads_rel_error
 
     def state_dict_to_list(self, sd):
         sd_list = {}
@@ -298,7 +246,7 @@ class Solver():
 
     def train(self):
 
-        pt.manual_seed(self.seed)
+#        pt.manual_seed(self.seed)
 
         print('d = %d, L = %d, K = %d, delta_t = %.2e, lr = %.2e, %s, %s, %s, %s'
               % (self.d, self.L, self.K, self.delta_t_np, self.lr, self.approx_method,
@@ -308,28 +256,26 @@ class Solver():
         for l in range(self.L):
             t_0 = time.time()
 
-            X, Y, Z_sum, u_L2, u_int, u_W_int, double_int, xi = self.initialize_training_data()
+            X, Y, Z_sum, u_L2, u_int, u_W_int, double_int = self.initialize_training_data()
+
             additional_loss = pt.zeros(self.K)
             for n in range(self.N):
+                xi = pt.randn(self.K, self.d).to(device)
                 if self.approx_method == 'value_function':
                     if n > 0:
                         additional_loss += (self.Y_n(X, n)[:, 0] - Y).pow(2)
                 Z = self.Z_n(X, n)
                 c = pt.zeros(self.d, 1).to(device)
                 if self.adaptive_forward_process is True:
-                    c = -Z.t()
-                X = X + (self.b(X) + pt.mm(self.sigma(X), c)[:, 0]) * self.delta_t + pt.mm(self.sigma(X), xi[:, :, n + 1].t()).t() * self.sq_delta_t
-                Y = Y + (self.h(self.delta_t * n, X, Y, Z) + pt.mm(Z, c)[:, 0]) * self.delta_t + pt.sum(Z * xi[:, :, n + 1], dim=1) * self.sq_delta_t
+                    c = -Z
+                X = X + (self.b(X) + pt.bmm(self.sigma(X), c.unsqueeze(2)).squeeze(2)) * self.delta_t + pt.bmm(self.sigma(X), xi.unsqueeze(2)).squeeze(2) * self.sq_delta_t
+                Y = Y + (self.h(self.delta_t * n, X, Y, Z) + pt.sum(Z*c, 1)) * self.delta_t + pt.sum(Z*xi, 1) * self.sq_delta_t
                 if 'relative_entropy' in self.loss_method:
                     Z_sum += 0.5 * pt.sum(Z**2, 1) * self.delta_t
 
                 if self.u_true(X, n * self.delta_t_np) is not None:
-                    u_L2 += pt.sum((-Z
-                                    - pt.tensor(self.u_true(X, n * self.delta_t_np)).t().float())**2
+                    u_L2 += pt.sum((-Z - pt.tensor(self.u_true(X, n * self.delta_t_np)).t().float())**2
                                    * self.delta_t, 1)
-
-            if self.compute_gradient_variance > 0 and l % self.compute_gradient_variance == 0:
-                self.grads_rel_error_log.append(pt.mean(self.get_gradient_variances(X, Y)).item())
 
             loss = self.gradient_descent(X, Y, Z_sum, l, additional_loss.mean())
 
