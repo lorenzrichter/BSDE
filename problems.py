@@ -12,7 +12,6 @@ device = pt.device('cpu')
 # to do:
 # - elliptic problems, e.g. hitting time problems (control not explicitly time-dependent)
 
-
 class LLGC():
     def __init__(self, name='LLGC', d=1, off_diag=0, T=1):
         self.name = name
@@ -105,11 +104,11 @@ class LQGC():
         n = int(np.ceil(t / self.delta_t))
         return -pt.mm(x, pt.mm(self.F[n, :, :], x.t())).t() + self.G[n]
 
-
-class DoubleWell():
-    def __init__(self, name='Double well', d=1, T=1, delta_t=0.005, alpha=1, beta=1):
+class DoubleWell1D():
+    def __init__(self, name='1D Double well', T=1, delta_t=0.005, alpha=1, beta=1):
+        # 1D example
+        self.d = 1
         self.name = name
-        self.d = d
         self.T = T
         self.delta_t = delta_t
         self.alpha = alpha
@@ -117,9 +116,6 @@ class DoubleWell():
         self.B = pt.eye(self.d).to(device)
         self.X_0 = -pt.ones(self.d).to(device)
         self.ref_sol_is_defined = False
-
-        if self.d != 1:
-            print('The double well example is only implemented for d = 1.')
 
     def V(self, x):
         return self.beta * (x**2 - 1)**2
@@ -192,7 +188,6 @@ class DoubleWell():
     def u_true(self, x, t):
         if self.ref_sol_is_defined == 0 : 
             self.ref_solution()
-
         dx = 2.0 * self.xb / self.nx
         i = pt.floor((x.squeeze() + self.xb) / dx).long()
         i[-1] -= 2
@@ -200,10 +195,10 @@ class DoubleWell():
         return self.u[n, i].unsqueeze(1)
 
 class Mueller2d():
-    def __init__(self, name='Mueller potential', d=2, T=1, alpha=1, beta=1):
-
+    def __init__(self, name='2D Mueller potential', T=1, alpha=1, beta=1):
+        # 2D example
+        self.d = 2
         self.name = name
-        self.d = d
         self.T = T
         self.alpha = alpha
         self.beta = beta
@@ -216,9 +211,6 @@ class Mueller2d():
         self.coeff_c = [-10, -10, -6.5, 0.7]
         self.xc = [1.0, 0.0, -0.5, -1.0]
         self.yc = [0.0, 0.5, 1.5, 1.0]
-
-        if self.d != 2:
-            print('The Muller example is only for d = 2.')
 
     def V(self, x):
       s = 0 
@@ -233,22 +225,21 @@ class Mueller2d():
       for i in range(4):
         dx = x[:,0] - self.xc[i] 
         dy = x[:,1] - self.yc[i] 
-        grad[:,0] += self.AA[i] * (2 * self.coeff_a[i] * dx + self.coeff_b[i] * dy) * exp(self.coeff_a[i] * dx * dx + self.coeff_b[i] * dx * dy + self.coeff_c[i] * dy * dy) 
-        grad[:,1] += self.AA[i] * (2 * self.coeff_c[i] * dy + self.coeff_b[i] * dx) * exp(self.coeff_a[i] * dx * dx + self.coeff_b[i] * dx * dy + self.coeff_c[i] * dy * dy)
-
+        grad[:,0] += self.AA[i] * (2 * self.coeff_a[i] * dx + self.coeff_b[i] * dy) * pt.exp(self.coeff_a[i] * dx * dx + self.coeff_b[i] * dx * dy + self.coeff_c[i] * dy * dy) 
+        grad[:,1] += self.AA[i] * (2 * self.coeff_c[i] * dy + self.coeff_b[i] * dx) * pt.exp(self.coeff_a[i] * dx * dx + self.coeff_b[i] * dx * dy + self.coeff_c[i] * dy * dy)
       return grad
 
     def b(self, x):
       return -1.0 * self.grad_V(x)
 
     def sigma(self, x):
-        return self.B
+        return self.B.repeat(x.shape[0],1,1)
 
     def h(self, t, x, y, z):
         return 0.5 * pt.sum(z**2, dim=1)
 
     def g(self, x):
-        return self.alpha * (x - 1)**2
+        return pt.ones(x.size(0))
 
     def u_true(self, x, t):
         return pt.tensor([[0.0]])
