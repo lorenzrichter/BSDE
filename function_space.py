@@ -5,9 +5,8 @@ import torch as pt
 
 
 class SingleParam(pt.nn.Module):
-    def __init__(self, lr, seed=42):
+    def __init__(self, lr):
         super(SingleParam, self).__init__()
-        pt.manual_seed(seed)
         self.Y_0 = pt.nn.Parameter(pt.randn(1), requires_grad=True)
         self.register_parameter('param', self.Y_0)
         self.adam = pt.optim.Adam(self.parameters(), lr=lr)
@@ -17,9 +16,8 @@ class SingleParam(pt.nn.Module):
 
 
 class Constant(pt.nn.Module):
-    def __init__(self, d, lr, seed=42):
+    def __init__(self, d, lr):
         super(Constant, self).__init__()
-        pt.manual_seed(seed)
         self.c = pt.nn.Parameter(pt.randn(d), requires_grad=True)
         self.register_parameter('param', self.c)
         self.adam = pt.optim.Adam(self.parameters(), lr=lr)
@@ -29,9 +27,8 @@ class Constant(pt.nn.Module):
 
 
 class Linear(pt.nn.Module):
-    def __init__(self, d, B, Q, lr, seed=42):
+    def __init__(self, d, B, Q, lr):
         super(Linear, self).__init__()
-        pt.manual_seed(seed)
         self.F = pt.nn.Parameter(pt.randn(d, d), requires_grad=True)
         self.B = B
         self.Q = Q
@@ -43,9 +40,8 @@ class Linear(pt.nn.Module):
 
 
 class Affine(pt.nn.Module):
-    def __init__(self, d, lr, seed=42):
+    def __init__(self, d, lr):
         super(Affine, self).__init__()
-        pt.manual_seed(seed)
         self.A = pt.nn.Parameter(pt.randn(d, d), requires_grad=True)
         self.b = pt.nn.Parameter(pt.randn(1, d), requires_grad=True)
         self.register_parameter('param A', self.A)
@@ -57,9 +53,8 @@ class Affine(pt.nn.Module):
 
 
 class NN(pt.nn.Module):
-    def __init__(self, d_in, d_out, lr, seed=42):
+    def __init__(self, d_in, d_out, lr):
         super(NN, self).__init__()
-        pt.manual_seed(seed)
         self.nn_dims = [d_in, 20, d_out] # [d, 40, 30, 30, 40, d]
         self.W = [item for sublist in
                   [[pt.nn.Parameter(pt.randn(self.nn_dims[i], self.nn_dims[i + 1],
@@ -91,9 +86,8 @@ class NN(pt.nn.Module):
 
 
 class DenseNet(pt.nn.Module):
-    def __init__(self, d_in, d_out, lr, seed=42):
+    def __init__(self, d_in, d_out, lr):
         super(DenseNet, self).__init__()
-        pt.manual_seed(seed)
         self.nn_dims = [d_in, 30, 30, d_out]
         self.W = [item for sublist in
                   [[pt.nn.Parameter(pt.randn(sum(self.nn_dims[:i + 1]), self.nn_dims[i + 1],

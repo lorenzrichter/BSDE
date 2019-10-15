@@ -7,16 +7,14 @@ from numpy import exp, log
 
 from scipy.linalg import expm, inv, solve_banded
 
-
 device = pt.device('cpu')
-
 
 # to do:
 # - elliptic problems, e.g. hitting time problems (control not explicitly time-dependent)
 
 
 class LLGC():
-    def __init__(self, name='LLGC', d=1, off_diag=0, T=5):
+    def __init__(self, name='LLGC', d=1, off_diag=0, T=1):
         self.name = name
         self.d = d
         self.T = T
@@ -56,9 +54,8 @@ class LLGC():
         return ((expm(self.A.numpy() * (self.T - t)).dot(x.t()).T).dot(self.alpha.numpy())
                 - 0.5 * self.alpha.numpy().T.dot(Sigma_n.dot(self.alpha)))
 
-
 class LQGC():
-    def __init__(self, name='LQGC', delta_t=0.05, d=1, off_diag=0, T=5):
+    def __init__(self, name='LQGC', delta_t=0.05, d=1, off_diag=0, T=1):
         self.name = name
         self.d = d
         self.T = T
@@ -110,7 +107,7 @@ class LQGC():
 
 
 class DoubleWell():
-    def __init__(self, name='Double well', d=1, T=5, delta_t=0.005, alpha=1, beta=1):
+    def __init__(self, name='Double well', d=1, T=1, delta_t=0.005, alpha=1, beta=1):
         self.name = name
         self.d = d
         self.T = T
@@ -119,58 +116,10 @@ class DoubleWell():
         self.beta = beta
         self.B = pt.eye(self.d).to(device)
         self.X_0 = -pt.ones(self.d).to(device)
+        self.ref_sol_is_defined = False
 
         if self.d != 1:
             print('The double well example is only implemented for d = 1.')
-
-        # range of x, [-xb, xb]
-        self.xb = 2.5
-        # number of discrete interval
-        self.nx = 1000
-        dx = 2.0 * self.xb / self.nx
-
-        beta = 2
-
-        xvec = np.linspace(-self.xb, self.xb, self.nx, endpoint=True)
-
-        # A = D^{-1} L D
-        # assumes Neumann boundary conditions
-
-        A = np.zeros([self.nx, self.nx])
-        for i in range(0, self.nx):
-            x = -self.xb + (i + 0.5) * dx
-            if i > 0:
-                x0 = -self.xb + (i - 0.5) * dx
-                x1 = -self.xb + i * dx
-                A[i, i - 1] = -exp(beta * 0.5 * (self.V(x0) + self.V(x) - 2 * self.V(x1))) / dx**2
-                A[i, i] = exp(beta * (self.V(x) - self.V(x1))) / (dx**2)
-            if i < self.nx - 1:
-                x0 = -self.xb + (i + 1.5) * dx
-                x1 = -self.xb + (i + 1) * dx
-                A[i, i + 1] = -exp(beta * 0.5 * (self.V(x0) + self.V(x) - 2 * self.V(x1))) / dx**2
-                A[i, i] = A[i, i] + exp(beta * (self.V(x) - self.V(x1))) / dx**2
-
-        A = -A / beta
-        N = int(self.T / self.delta_t)
-
-        D = np.diag(exp(beta * self.V(xvec) / 2))
-        D_inv = np.diag(exp(-beta * self.V(xvec) / 2))
-
-        self.psi = np.zeros([N + 1, self.nx])
-        self.psi[N, :] = exp(-self.g(xvec))
-
-        band = - delta_t * np.vstack([np.append([0], np.diagonal(A, offset=1)),
-                                      np.diagonal(A, offset=0) - N / self.T,
-                                      np.append(np.diagonal(A, offset=1), [0])])
-
-        for n in range(N - 1, -1, -1):
-            self.psi[n, :] = D.dot(solve_banded([1, 1], band, D_inv.dot(self.psi[n + 1, :])))
-
-        self.u = np.zeros([N + 1, self.nx - 1])
-        for n in range(N + 1):
-            for i in range(self.nx - 1):
-                self.u[n, i] = -1.0 * self.B * (-log(self.psi[n, i + 1]) + log(self.psi[n, i])) / dx
-        self.u = pt.tensor(self.u)
 
     def V(self, x):
         return self.beta * (x**2 - 1)**2
@@ -190,44 +139,68 @@ class DoubleWell():
     def g(self, x):
         return (self.alpha * (x - 1)**2).squeeze()
 
+    def ref_solution(self):
+        # range of x, [-xb, xb]
+        self.xb = 2.5
+        # number of discrete interval
+        self.nx = 1000
+        dx = 2.0 * self.xb / self.nx
+        self.dt = 0.005
+        N = int(self.T / self.dt)
+
+        xvec = np.linspace(-self.xb, self.xb, self.nx, endpoint=True)
+
+        # A = D^{-1} L D
+        # assumes Neumann boundary conditions
+
+        A = np.zeros([self.nx, self.nx])
+        for i in range(0, self.nx):
+            x = -self.xb + (i + 0.5) * dx
+            if i > 0:
+                x0 = -self.xb + (i - 0.5) * dx
+                x1 = -self.xb + i * dx
+                A[i, i - 1] = -exp(self.V(x0) + self.V(x) - 2 * self.V(x1)) / dx**2
+                A[i, i] = exp(2.0 * (self.V(x) - self.V(x1))) / (dx**2)
+            if i < self.nx - 1:
+                x0 = -self.xb + (i + 1.5) * dx
+                x1 = -self.xb + (i + 1) * dx
+                A[i, i + 1] = -exp(self.V(x0) + self.V(x) - 2 * self.V(x1)) / dx**2
+                A[i, i] = A[i, i] + exp(2.0 * (self.V(x) - self.V(x1))) / dx**2
+
+        A = -A / 2.0 
+
+        D = np.diag(exp(self.V(xvec)))
+        D_inv = np.diag(exp(-self.V(xvec)))
+
+        psi = np.zeros([N + 1, self.nx])
+        psi[N, :] = exp(-self.g(xvec))
+
+        band = - self.dt * np.vstack([np.append([0], np.diagonal(A, offset=1)),
+                                      np.diagonal(A, offset=0) - N / self.T,
+                                      np.append(np.diagonal(A, offset=1), [0])])
+
+        for n in range(N - 1, -1, -1):
+            psi[n, :] = D.dot(solve_banded([1, 1], band, D_inv.dot(psi[n + 1, :])))
+
+        self.u = np.zeros([N + 1, self.nx - 1])
+        for n in range(N + 1):
+            for i in range(self.nx - 1):
+                self.u[n, i] = -1.0 * self.B * (-log(psi[n, i + 1]) + log(psi[n, i])) / dx
+        self.u = pt.tensor(self.u)
+        self.ref_sol_is_defined = True
+
     def u_true(self, x, t):
+        if self.ref_sol_is_defined == 0 : 
+            self.ref_solution()
+
         dx = 2.0 * self.xb / self.nx
         i = pt.floor((x.squeeze() + self.xb) / dx).long()
         i[-1] -= 2
-        n = int(np.ceil(t / self.delta_t))
+        n = int(np.ceil(t / self.dt))
         return self.u[n, i].unsqueeze(1)
 
-class HeatEquation():
-    def __init__(self, name='Heat equation', d=1, T=5):
-        self.name = name
-        self.d = d
-        self.T = T
-        self.A = pt.zeros(self.d).to(device)
-        self.B = pt.eye(self.d).to(device)
-        self.alpha = pt.ones(self.d, 1).to(device)
-        self.X_0 = pt.zeros(self.d)
-
-        if ~np.all(np.linalg.eigvals(self.A.numpy()) < 0):
-            print('not all EV of A are negative')
-
-    def b(self, x):
-        return pt.mm(self.A, x.t()).t()
-
-    def sigma(self, x):
-        return self.B
-
-    def h(self, t, x, y, z):
-        return 0.5 * pt.sum(z**2, dim=1)
-
-    def g(self, x):
-        return pt.mm(x, self.alpha)[:, 0]
-
-    def u_true(self, x, t):
-        return -self.sigma(x).numpy().T.dot(expm(self.A.numpy().T * (self.T - t))
-                                            .dot(self.alpha.numpy())[:, 0])
-
 class Mueller2d():
-    def __init__(self, name='Mueller potential', d=2, T=5, alpha=1, beta=1):
+    def __init__(self, name='Mueller potential', d=2, T=1, alpha=1, beta=1):
 
         self.name = name
         self.d = d

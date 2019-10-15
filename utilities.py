@@ -5,9 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch as pt
 
-
 device = pt.device('cpu')
-
 
 def plot_loss_logs(experiment_name, models):
     fig, ax = plt.subplots(1, 2, figsize=(15, 3))

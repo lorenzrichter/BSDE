@@ -27,7 +27,7 @@ class Solver():
                  approx_method='control', loss_method='variance', time_approx='outer',
                  learn_Y_0=False, adaptive_forward_process=True, early_stopping_time=10000,
                  random_X_0=False, compute_gradient_variance=0, IS_variance_K=0,
-                 metastability_logs=None, print_every=100, seed=52, save_results=False):
+                 metastability_logs=None, print_every=100, save_results=False):
         self.problem = problem
         self.name = name
         self.date = date.today().strftime('%Y-%m-%d')
@@ -37,7 +37,6 @@ class Solver():
         self.Y_0 = pt.tensor([0.0])
 
         # hyperparameters
-        self.seed = seed
         self.delta_t_np = delta_t
         self.delta_t = pt.tensor(self.delta_t_np).to(device) # step size
         self.sq_delta_t = pt.sqrt(self.delta_t).to(device)
@@ -63,7 +62,6 @@ class Solver():
         # function approximation
         self.Phis = []
         self.time_approx = time_approx
-#        pt.manual_seed(self.seed)
         if self.approx_method == 'control':
             self.y_0 = SingleParam(lr=self.lr).to(device)
             if self.time_approx == 'outer':
@@ -133,23 +131,12 @@ class Solver():
             return (Y - self.g(X)).pow(2).mean()
         elif self.loss_method == 'variance':
             return (Y - self.g(X)).pow(2).mean() - (Y - self.g(X)).mean().pow(2)
-        elif self.loss_method == 'variance_red':
-            return ((-u_int - self.g(X)).pow(2).mean() - 2 * ((-u_int - self.g(X)) * u_W_int).mean()
-                    + 2 * u_int.mean() - (-u_int - self.g(X)).mean().pow(2))
-        elif self.loss_method == 'variance_red_2':
-            return ((-u_int - self.g(X)).pow(2).mean() + 2 * (self.g(X) * u_W_int).mean()
-                    - double_int.mean() + 2 * u_int.mean() - (-u_int - self.g(X)).mean().pow(2))
         elif self.loss_method == 'relative_entropy':
             return (Z_sum + self.g(X)).mean()
         elif self.loss_method == 'cross_entropy':
             if self.adaptive_forward_process is True:
                 return (Y * pt.exp(-self.g(X) + Y)).mean()
             return (Y * pt.exp(-self.g(X))).mean()
-        elif self.loss_method == 'relative_entropy_variance':
-            if l < 1000:
-                return ((Z_sum + self.g(X))).mean()
-            return (Y - self.g(X)).pow(2).mean() - (Y - self.g(X)).mean().pow(2)
-            #return ((Z_sum + self.g(X))).mean() + (Y - self.g(X)).pow(2).mean() - (Y - self.g(X)).mean().pow(2)
 
     def initialize_training_data(self):
         # size: k x d
@@ -204,7 +191,7 @@ class Solver():
     def save_logs(self):
         # currently does not work for all modi
         logs = {'name': self.name, 'date': self.date, 'd': self.d, 'T': self.T,
-                'seed': self.seed, 'delta_t': self.delta_t_np, 'N': self.N, 'lr': self.lr,
+                'delta_t': self.delta_t_np, 'N': self.N, 'lr': self.lr,
                 'K': self.K, 'loss_method': self.loss_method, 'learn_Y_0': self.learn_Y_0,
                 'adaptive_forward_process': self.adaptive_forward_process,
                 'Y_0_log': self.Y_0_log, 'loss_log': self.loss_log, 'u_L2_loss': self.u_L2_loss,
@@ -245,8 +232,6 @@ class Solver():
             return self.compute_grad_Y(X, n)
 
     def train(self):
-
-#        pt.manual_seed(self.seed)
 
         print('d = %d, L = %d, K = %d, delta_t = %.2e, lr = %.2e, %s, %s, %s, %s'
               % (self.d, self.L, self.K, self.delta_t_np, self.lr, self.approx_method,
