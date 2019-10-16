@@ -17,7 +17,10 @@ device = pt.device('cpu')
 
 
 class LLGC():
-    def __init__(self, name='LLGC', d=1, off_diag=0, T=5):
+    def __init__(self, name='LLGC', d=1, off_diag=0, T=5, seed=42):
+
+        pt.manual_seed(seed)
+
         self.name = name
         self.d = d
         self.T = T
@@ -59,7 +62,10 @@ class LLGC():
 
 
 class LQGC():
-    def __init__(self, name='LQGC', delta_t=0.05, d=1, off_diag=0, T=5):
+    def __init__(self, name='LQGC', delta_t=0.05, d=1, off_diag=0, T=5, seed=42):
+
+        pt.manual_seed(seed)
+
         self.name = name
         self.d = d
         self.T = T
@@ -124,6 +130,25 @@ class DoubleWell():
         if self.d != 1:
             print('The double well example is only implemented for d = 1.')
 
+    def V(self, x):
+        return self.beta * (x**2 - 1)**2
+
+    def grad_V(self, x):
+        return 4.0 * self.beta * x * (x**2 - 1)
+
+    def b(self, x):
+        return -self.grad_V(x)
+
+    def sigma(self, x):
+        return self.B
+
+    def h(self, t, x, y, z):
+        return 0.5 * pt.sum(z**2, dim=1)
+
+    def g(self, x):
+        return self.alpha * (x - 1)**2
+
+    def compute_reference_solution(self):
         # range of x, [-xb, xb]
         self.xb = 5
         # number of discrete interval
@@ -164,7 +189,7 @@ class DoubleWell():
         self.psi[N, :] = exp(-self.g(self.xvec))
 
         for n in range(N - 1, -1, -1):
-            band = - delta_t * np.vstack([np.append([0], np.diagonal(A, offset=1)),
+            band = - self.delta_t * np.vstack([np.append([0], np.diagonal(A, offset=1)),
                                           np.diagonal(A, offset=0) - N / self.T,
                                           np.append(np.diagonal(A, offset=1), [0])])
 
@@ -177,23 +202,11 @@ class DoubleWell():
                 self.u[n, i] = -2 / beta * self.B * (- log(self.psi[n, i + 1]) + log(self.psi[n, i])) / self.dx
         #self.u = 2 / beta * np.gradient(np.log(self.psi), self.dx, 1)
 
-    def V(self, x):
-        return self.beta * (x**2 - 1)**2
-
-    def grad_V(self, x):
-        return 4.0 * self.beta * x * (x**2 - 1)
-
-    def b(self, x):
-        return -self.grad_V(x)
-
-    def sigma(self, x):
-        return self.B
-
-    def h(self, t, x, y, z):
-        return 0.5 * pt.sum(z**2, dim=1)
-
-    def g(self, x):
-        return self.alpha * (x - 1)**2
+    def v_true(self, x, t):
+        i = np.floor((x.squeeze(0) + self.xb) / self.dx).long()
+        i[-1] -= 2
+        n = int(np.ceil(t / self.delta_t))
+        return np.array(- log(self.psi[n, i])).reshape([1, len(i)])
 
     def u_true(self, x, t):
         i = np.floor((x.squeeze(0) + self.xb) / self.dx).long()
