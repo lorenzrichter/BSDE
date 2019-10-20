@@ -15,7 +15,7 @@ from function_space import DenseNet, Linear, NN, SingleParam
 from utilities import do_importance_sampling
 
 
-device = pt.device('cuda')
+device = pt.device('cpu')
 
 
 # to do:
@@ -273,7 +273,7 @@ class Solver():
             if self.time_approx == 'outer':
                 return self.z_n[n](X)
             elif self.time_approx == 'inner':
-                t_X = pt.cat([pt.ones([X.shape[0], 1]) * n * self.delta_t, X], 1)
+                t_X = pt.cat([pt.ones([X.shape[0], 1]).to(device) * n * self.delta_t, X], 1)
                 return self.z_n(t_X)
         if self.approx_method == 'value_function':
             return self.compute_grad_Y(X, n)
@@ -328,9 +328,9 @@ class Solver():
                 if 'relative_entropy' in self.loss_method:
                     Z_sum += 0.5 * pt.sum(Z**2, 1) * self.delta_t
 
-                if self.u_true(X.detach(), n * self.delta_t_np) is not None:
+                if self.u_true(X.cpu().detach(), n * self.delta_t_np) is not None:
                     u_L2 += pt.sum((-Z
-                                    - pt.tensor(self.u_true(X.detach(), n * self.delta_t_np)).t().float())**2
+                                    - pt.tensor(self.u_true(X.cpu().detach(), n * self.delta_t_np)).t().float().to(device))**2
                                    * self.delta_t, 1)
 
             if self.compute_gradient_variance > 0 and l % self.compute_gradient_variance == 0:
@@ -353,7 +353,7 @@ class Solver():
                           % (l, self.loss_log[-1], self.u_L2_loss[-1],
                              np.mean(self.times[-self.print_every:])))
                 if self.IS_variance_K > 0:
-                    variance_naive, variance_IS = do_importance_sampling(self.problem, self, self.IS_variance_K,
+                    _, variance_naive, _, variance_IS = do_importance_sampling(self.problem, self, self.IS_variance_K,
                                                                          control='approx', verbose=False)
                     string += ' - var naive: %.4e - var IS: %.4e' % (variance_naive, variance_IS)
                 print(string)

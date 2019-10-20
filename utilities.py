@@ -102,22 +102,22 @@ def plot_solution(model, x, t, components, ylims=None):
 
 def do_importance_sampling(problem, model, K, control='approx', verbose=True, delta_t=0.01):
 
-    X = problem.X_0.repeat(K, 1)
-    X_u = problem.X_0.repeat(K, 1)
-    ito_int = pt.zeros(K)
-    riemann_int = pt.zeros(K)
+    X = problem.X_0.repeat(K, 1).to(device)
+    X_u = problem.X_0.repeat(K, 1).to(device)
+    ito_int = pt.zeros(K).to(device)
+    riemann_int = pt.zeros(K).to(device)
 
     sq_delta_t = np.sqrt(delta_t)
     N = int(np.ceil(problem.T / delta_t))
 
     for n in range(N):
-        xi = pt.randn(K, problem.d)
+        xi = pt.randn(K, problem.d).to(device)
         X = (X + problem.b(X) * delta_t
              + pt.mm(problem.sigma(X), xi.t()).t() * sq_delta_t)
         if control == 'approx':
-            ut = -model.Z_n(X_u, int(np.floor(n * delta_t / model.delta_t)))
+            ut = -model.Z_n(X_u, int(pt.floor(n * delta_t / model.delta_t)))
         if control == 'true':
-            ut = pt.tensor(problem.u_true(X_u, n * delta_t)).t().float()
+            ut = pt.tensor(problem.u_true(X_u.cpu(), n * delta_t)).t().float().to(device)
         X_u = (X_u + (problem.b(X_u) + pt.mm(problem.sigma(X_u), ut.t()).t()) * delta_t
                + pt.mm(problem.sigma(X_u), xi.t()).t() * sq_delta_t)
         ito_int += pt.sum(ut * xi, 1) * sq_delta_t
@@ -125,10 +125,12 @@ def do_importance_sampling(problem, model, K, control='approx', verbose=True, de
 
     girsanov = pt.exp(- ito_int - 0.5 * riemann_int)
 
+    mean_naive = pt.mean(pt.exp(-problem.g(X))).item()
     variance_naive = pt.var(pt.exp(-problem.g(X))).item()
+    mean_IS = pt.mean(pt.exp(-problem.g(X_u)) * girsanov).item()
     variance_IS = pt.var(pt.exp(-problem.g(X_u)) * girsanov).item()
 
     if verbose is True:
-        print('variance of naive estimator: %.4e' % variance_naive)
-        print('variance of importance sampling estimator: %.4e' % variance_IS)
-    return variance_naive, variance_IS
+        print('naive mean: %.4e, naive variance: %.4e' % (mean_naive, variance_naive))
+        print('IS mean: %.4e, IS variance: %.4e' % (mean_IS, variance_IS))
+    return mean_naive, variance_naive, mean_IS, variance_IS
