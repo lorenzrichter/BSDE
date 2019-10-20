@@ -15,7 +15,7 @@ from function_space import DenseNet, Linear, NN, SingleParam
 from utilities import do_importance_sampling
 
 
-device = pt.device('cpu')
+device = pt.device('cuda')
 
 
 # to do:
@@ -130,6 +130,8 @@ class Solver():
                 self.Phis = [self.z_n, self.y_0]
         elif self.approx_method == 'value_function':
             self.Phis = self.y_n
+        for phi in self.Phis:
+            phi.to(device)
 
     def loss_function(self, X, Y, Z_sum, l):
         if self.loss_method == 'moment':
@@ -153,26 +155,6 @@ class Solver():
                 return ((Z_sum + self.g(X))).mean()
             return (Y - self.g(X)).pow(2).mean() - (Y - self.g(X)).mean().pow(2)
             #return ((Z_sum + self.g(X))).mean() + (Y - self.g(X)).pow(2).mean() - (Y - self.g(X)).mean().pow(2)
-
-    def initialize_training_data(self):
-        X = self.X_0.repeat(self.K, 1).to(device)
-        if self.random_X_0 is True:
-            X = pt.randn(self.K, self.d).to(device)
-        Y = self.Y_0.repeat(self.K).to(device)
-        if self.approx_method == 'value_function':
-            X = pt.autograd.Variable(X, requires_grad=True)
-            Y = self.Y_n(X, 0)[:, 0]
-        elif self.learn_Y_0 is True:
-            Y = self.y_0(X)
-            self.Y_0_log.append(Y[0].item())
-        Z_sum = pt.zeros(self.K).to(device)
-        u_L2 = pt.zeros(self.K).to(device)
-        u_int = pt.zeros(self.K).to(device)
-        u_W_int = pt.zeros(self.K).to(device)
-        double_int = pt.zeros(self.K).to(device)
-
-        xi = pt.randn(self.K, self.d, self.N + 1).to(device)
-        return X, Y, Z_sum, u_L2, u_int, u_W_int, double_int, xi
 
     def zero_grad(self):
         for phi in self.Phis:
@@ -295,6 +277,26 @@ class Solver():
                 return self.z_n(t_X)
         if self.approx_method == 'value_function':
             return self.compute_grad_Y(X, n)
+
+    def initialize_training_data(self):
+        X = self.X_0.repeat(self.K, 1).to(device)
+        if self.random_X_0 is True:
+            X = pt.randn(self.K, self.d).to(device)
+        Y = self.Y_0.repeat(self.K).to(device)
+        if self.approx_method == 'value_function':
+            X = pt.autograd.Variable(X, requires_grad=True)
+            Y = self.Y_n(X, 0)[:, 0]
+        elif self.learn_Y_0 is True:
+            Y = self.y_0(X)
+            self.Y_0_log.append(Y[0].item())
+        Z_sum = pt.zeros(self.K).to(device)
+        u_L2 = pt.zeros(self.K).to(device)
+        u_int = pt.zeros(self.K).to(device)
+        u_W_int = pt.zeros(self.K).to(device)
+        double_int = pt.zeros(self.K).to(device)
+
+        xi = pt.randn(self.K, self.d, self.N + 1).to(device)
+        return X, Y, Z_sum, u_L2, u_int, u_W_int, double_int, xi
 
     def train(self):
 
