@@ -5,10 +5,13 @@ import torch as pt
 
 
 class SingleParam(pt.nn.Module):
-    def __init__(self, lr, seed=42):
+    def __init__(self, lr, initial=None, seed=42):
         super(SingleParam, self).__init__()
         pt.manual_seed(seed)
-        self.Y_0 = pt.nn.Parameter(pt.randn(1), requires_grad=True)
+        if initial is None:
+            self.Y_0 = pt.nn.Parameter(pt.randn(1), requires_grad=True)
+        else:
+            self.Y_0 = pt.nn.Parameter(pt.tensor([initial]), requires_grad=True)
         self.register_parameter('param', self.Y_0)
         self.adam = pt.optim.Adam(self.parameters(), lr=lr)
 
@@ -54,6 +57,22 @@ class Affine(pt.nn.Module):
 
     def forward(self, x):
         return pt.mm(self.A, x.t()).t() + self.b
+
+
+class Sines(pt.nn.Module):
+    # linear comibation of M sine functions with frequencies omega
+    # only works for d = 1
+    def __init__(self, d, lr, M=10, seed=42):
+        super(Sines, self).__init__()
+        pt.manual_seed(seed)
+        self.alpha = pt.nn.Parameter(pt.randn(M, 1), requires_grad=True)
+        self.omega = pt.linspace(1, M, M).unsqueeze(0)
+
+        self.register_parameter('param alpha', self.alpha)
+        self.adam = pt.optim.Adam(self.parameters(), lr=lr)
+
+    def forward(self, x):
+        return pt.mm(pt.sin(pt.mm(x, self.omega)), self.alpha)
 
 
 class NN(pt.nn.Module):
