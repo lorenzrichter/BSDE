@@ -161,11 +161,8 @@ class Solver():
 
         Z_sum = pt.zeros(self.K).to(device)
         u_L2 = pt.zeros(self.K).to(device)
-        u_int = pt.zeros(self.K).to(device)
-        u_W_int = pt.zeros(self.K).to(device)
-        double_int = pt.zeros(self.K).to(device)
 
-        return X, Y, Z_sum, u_L2, u_int, u_W_int, double_int 
+        return X, Y, Z_sum, u_L2 
 
     # clear the gradient
     def zero_grad(self):
@@ -176,39 +173,45 @@ class Solver():
         for phi in self.Phis:
             phi.adam.step()
 
-    # Wei: this function seems not used?
-    def flatten_gradient(self, k, grads, grads_flat):
-        i = 0
-        for grad in grads:
-            grad_flat = grad.reshape(-1)
-            j = len(grad_flat)
-            grads_flat[k, i:i + j] = grad_flat
-            i += j
-        return grads_flat
+    # write network data to file
+    def save_networks(self):
+        data_dict = {}
+        idx = 0 
+        for z in self.Phis:
+            key = 'nn%d' % idx
+            data_dict[key] = z.state_dict()
+            idx += 1
+        path_name = 'output/%s_%s.pt' % (self.name, self.date)
+        pt.save(data_dict, path_name)
+        print ('\nnetworks data has been stored to file: %s' % path_name)
 
-    def state_dict_to_list(self, sd):
-        sd_list = {}
-        for name in sd:
-            sd_list[name] = sd[name].numpy().tolist()
-        return sd_list
+    # load network data from file
+    def load_networks(self, cp_name):
+        print ('\nload network data from file: %s' % cp_name)
+        checkpoint = pt.load(cp_name)
+        idx = 0 
+        for z in self.Phis:
+            key = 'nn%d' % idx
+            z.load_state_dict( checkpoint[key] ) 
+            z.eval()
+            idx += 1
 
+    # write information to log file
     def save_logs(self):
-        # currently does not work for all modi
         logs = {'name': self.name, 'date': self.date, 'd': self.d, 'T': self.T,
                 'delta_t': self.delta_t_np, 'N': self.N, 'lr': self.lr,
                 'K': self.K, 'loss_method': self.loss_method, 'learn_Y_0': self.learn_Y_0,
                 'adaptive_forward_process': self.adaptive_forward_process,
-                'Y_0_log': self.Y_0_log, 'loss_log': self.loss_log, 'u_L2_loss': self.u_L2_loss,
-                'Z_n_state_dict': [self.state_dict_to_list(z.state_dict()) for z in self.z_n]}
+                'Y_0_log': self.Y_0_log, 'loss_log': self.loss_log, 'u_L2_loss': self.u_L2_loss}
 
-        path_name = 'logs/%s_%s.json' % (self.name, self.date)
+        path_name = 'output/%s_%s.json' % (self.name, self.date)
         i = 1
         while os.path.isfile(path_name):
             i += 1
-            path_name = 'logs/%s_%s_%d.json' % (self.name, self.date, i)
+            path_name = 'output/%s_%s_%d.json' % (self.name, self.date, i)
 
         with open(path_name, 'w') as f:
-            json.dump(logs, f)
+            json.dump(logs, f, indent=2)
 
     # when neural network represents value function, i.e., self.approx_method = 'value_function', we computing control by taking gradient 
     def compute_grad_Y(self, X, n):
@@ -242,8 +245,7 @@ class Solver():
             return self.compute_grad_Y(X, n)
 
     def train(self):
-
-        print('d = %d, L = %d, K = %d, delta_t = %.2e, N = %d, lr = %.2e, %s, %s, %s, %s'
+        print('\nd = %d, L = %d, K = %d, delta_t = %.2e, N = %d, lr = %.2e, %s, %s, %s, %s\n'
               % (self.d, self.L, self.K, self.delta_t_np, self.N, self.lr, self.approx_method, self.time_approx, self.loss_method, 'adaptive' if self.adaptive_forward_process else ''))
 
         # stochastic gradient descent (SGD) steps
@@ -251,7 +253,7 @@ class Solver():
             # get current time
             t_0 = time.time()
 
-            X, Y, Z_sum, u_L2, u_int, u_W_int, double_int = self.initialize_training_data()
+            X, Y, Z_sum, u_L2 = self.initialize_training_data()
 
             additional_loss = pt.zeros(self.K)
             for n in range(self.N):
@@ -294,3 +296,5 @@ class Solver():
 
         if self.save_results is True:
             self.save_logs()
+
+        self.save_networks()

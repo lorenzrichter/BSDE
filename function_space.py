@@ -1,8 +1,5 @@
 #pylint: disable=invalid-name, no-member, too-many-arguments, missing-docstring, arguments-differ, unused-argument
-
-
 import torch as pt
-
 
 class SingleParam(pt.nn.Module):
     def __init__(self, lr):
@@ -14,7 +11,6 @@ class SingleParam(pt.nn.Module):
     def forward(self, x):
         return self.Y_0
 
-
 class Constant(pt.nn.Module):
     def __init__(self, d, lr):
         super(Constant, self).__init__()
@@ -24,7 +20,6 @@ class Constant(pt.nn.Module):
 
     def forward(self, x):
         return self.c.repeat(x.shape[0], 1)
-
 
 class Linear(pt.nn.Module):
     def __init__(self, d, B, Q, lr):
@@ -38,7 +33,6 @@ class Linear(pt.nn.Module):
     def forward(self, x):
         return pt.mm(self.Q.inverse(), pt.mm(self.B.t(), pt.mm(self.F, x.t()))).t()
 
-
 class Affine(pt.nn.Module):
     def __init__(self, d, lr):
         super(Affine, self).__init__()
@@ -50,7 +44,6 @@ class Affine(pt.nn.Module):
 
     def forward(self, x):
         return pt.mm(self.A, x.t()).t() + self.b
-
 
 class NN(pt.nn.Module):
     def __init__(self, d_in, d_out, lr):
@@ -83,7 +76,6 @@ class NN(pt.nn.Module):
             if i != len(self.nn_dims) - 2:
                 x = pt.nn.functional.relu(x)
         return x
-
 
 class DenseNet(pt.nn.Module):
     def __init__(self, d_in, d_out, lr):

@@ -13,8 +13,7 @@ def plot_loss_logs(experiment_name, models):
 
     for model in models:
         if 'entropy' in model.loss_method:
-            ax[0].plot(np.array(model.loss_log) - np.min(np.array(model.loss_log)),
-                       label=model.name)
+            ax[0].plot(np.array(model.loss_log) - np.min(np.array(model.loss_log)), label=model.name)
             ax[0].set_yscale('log')
         else:
             ax[0].plot(model.loss_log, label=model.name)

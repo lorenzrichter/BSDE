@@ -8,6 +8,7 @@ problem = DoubleWell1D(T=1.0, delta_t = 0.005)
 #problem = LLGC(d=2)
 sol = Solver('test', problem, K=5, L=3, time_approx='outer',approx_method='control',loss_method='moment')
 #pt.manual_seed(42)
-sol.train()
+#sol.train()
+sol.load_networks('output/test_2019-10-28.pt')
 
 #do_importance_sampling(problem, sol, 50000, control='true', verbose=True, delta_t=0.005)
