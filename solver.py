@@ -1,8 +1,3 @@
-#pylint: disable=invalid-name, no-member, too-many-arguments, missing-docstring
-#pylint: disable=too-many-instance-attributes, not-callable, no-else-return
-#pylint: disable=inconsistent-return-statements, too-many-locals, too-many-return-statements
-#pylint: disable=too-many-statements
-
 from datetime import date
 import json
 import numpy as np
@@ -15,87 +10,86 @@ from utilities import do_importance_sampling
 
 device = pt.device('cpu')
 
-# to do:
-# - flexible learning rate, line search?
-# - automatic logging
-# - flexible optimizer
-
-
 class Solver():
 
-    def __init__(self, name, problem, lr=0.001, L=10000, K=50, delta_t=0.05,
-                 approx_method='control', loss_method='variance', time_approx='outer',
-                 learn_Y_0=False, adaptive_forward_process=True, early_stopping_time=10000,
-                 random_X_0=False, compute_gradient_variance=0, IS_variance_K=0,
-                 metastability_logs=None, print_every=100, save_results=False):
+    def __init__(self, name, problem, lr=0.001, L=10000, K=50, delta_t=0.01, approx_method='control', loss_method='variance', time_approx='outer', adaptive_forward_process=True, early_stopping_time=10000, random_X_0=False, IS_variance_K=0, metastability_logs=None, print_every=100, save_results=False):
         self.problem = problem
         self.name = name
         self.date = date.today().strftime('%Y-%m-%d')
+        # dimension of the problem
         self.d = problem.d
+        # time interval: [0, T]
         self.T = problem.T
+        # starting state
         self.X_0 = problem.X_0
-        self.Y_0 = pt.tensor([0.0])
 
         # hyperparameters
         self.delta_t_np = delta_t
         self.delta_t = pt.tensor(self.delta_t_np).to(device) # step size
         self.sq_delta_t = pt.sqrt(self.delta_t).to(device)
-        self.N = int(np.floor(self.T / self.delta_t_np)) # number of steps
+        self.N = int(np.floor(self.T / self.delta_t_np)) # number of steps 
         self.lr = lr # learning rate
         self.L = L # gradient steps
         self.K = K # batch size
+        # whether x0 is randomized or fixed 
         self.random_X_0 = random_X_0
 
         # learning properties
         self.loss_method = loss_method
         self.approx_method = approx_method
-        self.learn_Y_0 = learn_Y_0
         self.adaptive_forward_process = adaptive_forward_process
         self.early_stopping_time = early_stopping_time
+        self.learn_Y_0 = False
+        # Y0 will be learned when we use 2nd moment as loss function
         if self.loss_method == 'moment':
             self.learn_Y_0 = True
         if self.loss_method == 'relative_entropy':
             self.adaptive_forward_process = True
-        if self.loss_method == 'cross_entropy':
-            self.learn_Y_0 = False
 
         # function approximation
         self.Phis = []
         self.time_approx = time_approx
+        # if we learn control 
         if self.approx_method == 'control':
             self.y_0 = SingleParam(lr=self.lr).to(device)
+            # if different neural networks are used for different time 
             if self.time_approx == 'outer':
                 self.z_n = [DenseNet(d_in=self.d, d_out=self.d, lr=self.lr) for i in range(self.N)]
+            # if a single neural network is used to learn control u(x,t) 
             elif self.time_approx == 'inner':
                 self.z_n = DenseNet(d_in=self.d + 1, d_out=self.d, lr=self.lr)
-
+        # if we learn value function
         elif self.approx_method == 'value_function':
+            # if different neural networks are used for different time 
             if self.time_approx == 'outer':
                 self.y_n = [DenseNet(d_in=self.d, d_out=1, lr=self.lr) for i in range(self.N)]
+            # if a single neural network is used to learn value function phi(x,t) 
             elif self.time_approx == 'inner':
                 self.y_n = [DenseNet(d_in=self.d + 1, d_out=1, lr=self.lr)]
 
+        # putting all netwroks together
         self.update_Phis()
 
         for phi in self.Phis:
             phi.train()
 
-        self.p = sum([np.prod(params.size()) for params in filter(lambda params:
-                                                                  params.requires_grad,
-                                                                  self.Phis[0].parameters())])
+        # number of parameters in the NNs that will be learned 
+        self.p = sum([np.prod(params.size()) for params in filter(lambda params: params.requires_grad, self.Phis[0].parameters())])
+        if self.time_approx == 'outer':
+            print ('%d neural network(NN), %d parameters in each network, total parameters in NNs = %d' % (self.N, self.p, self.p * self.N))
+        else:
+            print ('%d neural network(NN), %d parameters in each network, total parameters in NNs = %d' % (1, self.p, self.p))
 
         # logging
         self.Y_0_log = []
         self.loss_log = []
         self.u_L2_loss = []
         self.times = []
-        self.grads_rel_error_log = []
         self.particles_close_to_target = []
 
         # printing and logging
         self.print_every = print_every
         self.save_results = save_results
-        self.compute_gradient_variance = compute_gradient_variance
         self.IS_variance_K = IS_variance_K
         self.metastability_logs = metastability_logs
 
@@ -117,6 +111,7 @@ class Solver():
     def v_true(self, x, t):
         return self.problem.v_true(x, t)
 
+    # putting all NNs together 
     def update_Phis(self):
         if self.approx_method == 'control':
             if self.time_approx == 'outer':
@@ -143,7 +138,7 @@ class Solver():
         X = self.X_0.repeat(self.K, 1).to(device)
         if self.random_X_0 is True:
             X = pt.randn(self.K, self.d).to(device)
-        Y = self.Y_0.repeat(self.K).to(device)
+        Y = pt.zeros(self.K).to(device)
         if self.approx_method == 'value_function':
             X = pt.autograd.Variable(X, requires_grad=True)
             Y = self.Y_n(X, 0)[:, 0]
@@ -233,10 +228,8 @@ class Solver():
 
     def train(self):
 
-        print('d = %d, L = %d, K = %d, delta_t = %.2e, lr = %.2e, %s, %s, %s, %s'
-              % (self.d, self.L, self.K, self.delta_t_np, self.lr, self.approx_method,
-                 self.time_approx, self.loss_method,
-                 'adaptive' if self.adaptive_forward_process else ''))
+        print('d = %d, L = %d, K = %d, delta_t = %.2e, N = %d, lr = %.2e, %s, %s, %s, %s'
+              % (self.d, self.L, self.K, self.delta_t_np, self.N, self.lr, self.approx_method, self.time_approx, self.loss_method, 'adaptive' if self.adaptive_forward_process else ''))
 
         for l in range(self.L):
             t_0 = time.time()

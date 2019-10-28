@@ -2,15 +2,10 @@
 
 import numpy as np
 import torch as pt
-
 from numpy import exp, log
-
 from scipy.linalg import expm, inv, solve_banded
 
 device = pt.device('cpu')
-
-# to do:
-# - elliptic problems, e.g. hitting time problems (control not explicitly time-dependent)
 
 class LLGC():
     def __init__(self, name='LLGC', d=1, off_diag=0, T=1):
@@ -105,24 +100,29 @@ class LQGC():
         return -pt.mm(x, pt.mm(self.F[n, :, :], x.t())).t() + self.G[n]
 
 class DoubleWell1D():
-    def __init__(self, name='1D Double well', T=1, delta_t=0.005, alpha=1, beta=1):
+    def __init__(self, name='1D Double well', T=1, delta_t=0.005, alpha=1, kappa=1):
         # 1D example
         self.d = 1
         self.name = name
         self.T = T
-        self.delta_t = delta_t
         self.alpha = alpha
-        self.beta = beta
+        # coefficient in the potential
+        self.kappa = kappa
         self.B = pt.eye(self.d).to(device)
+        # starting from one local minimizer of the potential at x0=-1
         self.X_0 = -pt.ones(self.d).to(device)
+        # whether the reference solution has been computed or not
         self.ref_sol_is_defined = False
 
+    # double well potential
     def V(self, x):
-        return self.beta * (x**2 - 1)**2
+        return self.kappa * (x**2 - 1)**2
 
+    # gradient of V
     def grad_V(self, x):
-        return 4.0 * self.beta * x * (x**2 - 1)
+        return 4.0 * self.kappa * x * (x**2 - 1)
 
+    # drift
     def b(self, x):
         return -self.grad_V(x)
 
@@ -133,14 +133,16 @@ class DoubleWell1D():
         return 0.5 * pt.sum(z**2, dim=1)
 
     def g(self, x):
-        return (self.alpha * (x - 1)**2).squeeze()
+        return (self.alpha * (x - 1.0)**2).squeeze()
 
+    # compute optimal control by solving PDE 
     def ref_solution(self):
         # range of x, [-xb, xb]
         self.xb = 2.5
-        # number of discrete interval
+        # number of discrete interval along x
         self.nx = 1000
         dx = 2.0 * self.xb / self.nx
+        # mesh size for time [0, T]
         self.dt = 0.005
         N = int(self.T / self.dt)
 
@@ -183,14 +185,18 @@ class DoubleWell1D():
             for i in range(self.nx - 1):
                 self.u[n, i] = -1.0 * self.B * (-log(psi[n, i + 1]) + log(psi[n, i])) / dx
         self.u = pt.tensor(self.u)
+
+        # change the flag to indicate that optimal control has been computed
         self.ref_sol_is_defined = True
 
+    # optimal control of given x and t
     def u_true(self, x, t):
+        # compute optimal control, if not done yet
         if self.ref_sol_is_defined == 0 : 
             self.ref_solution()
+        # compute the indices corresponding to x and t
         dx = 2.0 * self.xb / self.nx
         i = pt.floor((x.squeeze() + self.xb) / dx).long()
-        i[-1] -= 2
         n = int(np.ceil(t / self.dt))
         return self.u[n, i].unsqueeze(1)
 
