@@ -186,6 +186,8 @@ class DoubleWell1D():
                 self.u[n, i] = -1.0 * self.B * (-log(psi[n, i + 1]) + log(psi[n, i])) / dx
         self.u = pt.tensor(self.u)
 
+        print ('\nreference solution (optimal control u) has been computed for double well 1D example')
+
         # change the flag to indicate that optimal control has been computed
         self.ref_sol_is_defined = True
 
@@ -196,7 +198,8 @@ class DoubleWell1D():
             self.ref_solution()
         # compute the indices corresponding to x and t
         dx = 2.0 * self.xb / self.nx
-        i = pt.floor((x.squeeze() + self.xb) / dx).long()
+        i = pt.floor((x.squeeze() + self.xb) / dx).long().detach().numpy()
+        np.clip(i, 0, self.nx-2, out=i)
         n = int(np.ceil(t / self.dt))
         return self.u[n, i].unsqueeze(1)
 

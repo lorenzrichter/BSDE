@@ -12,8 +12,7 @@ device = pt.device('cpu')
 
 class Solver():
 
-    def __init__(self, name, problem, lr=0.001, L=10000, K=50, delta_t=0.01, approx_method='control', loss_method='variance',
-            time_approx='outer', adaptive_forward_process=False, random_X_0=False, metastability_logs=None, print_every=100, save_results=True, u_l2_error_flag=False):
+    def __init__(self, name, problem, lr=0.001, L=10000, K=50, delta_t=0.01, approx_method='control', loss_method='variance', time_approx='outer', adaptive_forward_process=False, random_X_0=False, metastability_logs=None, print_every=100, save_results=True, u_l2_error_flag=False):
         self.problem = problem
         self.name = name
         self.date = date.today().strftime('%Y-%m-%d')
@@ -114,10 +113,13 @@ class Solver():
     # put all NNs together 
     def update_Phis(self):
         if self.approx_method == 'control':
-            if self.time_approx == 'outer':
-                self.Phis = self.z_n + [self.y_0]
-            elif self.time_approx == 'inner':
-                self.Phis = [self.z_n, self.y_0]
+            if self.learn_Y_0 is True: 
+                if self.time_approx == 'outer':
+                    self.Phis = self.z_n + [self.y_0]
+                elif self.time_approx == 'inner':
+                    self.Phis = [self.z_n, self.y_0]
+            else:
+                self.Phis = self.z_n
         elif self.approx_method == 'value_function':
             self.Phis = self.y_n
 
@@ -292,7 +294,12 @@ class Solver():
 
             if l % self.print_every == 0:
                 string = ('%d - loss: %.4e - u L2: %.4e - time/iter: %.2fs' % (l, self.loss_log[-1], self.u_L2_loss[-1], np.mean(self.times[-self.print_every:])))
-                print(string)
+                print (string)
+                print ('   l_inf norm of gradient: %.3e\n' %
+                        (np.array([max([pt.norm(params.grad.data,
+                            float('inf')).item() for params in filter(lambda
+                                params: params.requires_grad,
+                                phi.parameters())]) for phi in self.Phis]).max()) )
 
         if self.save_results is True:
             self.save_logs()

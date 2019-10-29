@@ -2,6 +2,8 @@
 #pylint: too-many-branches
 
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from pylab import *
 import numpy as np
 import torch as pt
 
@@ -96,6 +98,25 @@ def plot_solution(model, x, t, components, ylims=None):
 
     return fig
 
+def plot_solution_for_DoubleWell1d(model, fig_file_name):
+    xb = 1.0
+    X = pt.linspace(-xb, xb, 200).unsqueeze(1)
+    fig, ax = plt.subplots(1, 2, figsize=(10, 6))
+
+    Z = np.array([-model.Z_n(X, n).detach().numpy().squeeze() for n in range(model.N)])
+
+    im = ax[0].imshow( Z , cmap=cm.jet, extent = [-xb, xb, 0, model.T], vmin=Z.min(), vmax=Z.max(), origin='lower', interpolation='none' )
+
+#    Z = np.array([model.u_true(X, n * model.delta_t_np).numpy().squeeze() for n in range(model.N)])
+    im = ax[1].imshow( Z , cmap=cm.jet, extent = [-xb, xb, 0, model.T], vmin=Z.min(), vmax=Z.max(), origin='lower', interpolation='none' )
+
+    cax = fig.add_axes([0.08, 0.04, .84, 0.04])
+    fig.colorbar(im, cax=cax, orientation='horizontal',cmap=cm.jet)
+    cax.tick_params(labelsize=10)
+
+    print ('\ncontrol u has been stored to file: %s' % fig_file_name)
+    savefig(fig_file_name)
+
 def do_importance_sampling(problem, model, K, control='approx', verbose=True, delta_t=0.01):
 
     X = problem.X_0.repeat(K, 1)
@@ -125,6 +146,6 @@ def do_importance_sampling(problem, model, K, control='approx', verbose=True, de
     variance_IS = pt.var(pt.exp(-problem.g(X_u)) * girsanov).item()
 
     if verbose is True:
-        print('(mean, variance) of naive estimator: (%.4e, %.4e)' % (mean_naive, variance_naive))
+        print('\n(mean, variance) of naive estimator: (%.4e, %.4e)' % (mean_naive, variance_naive))
         print('(mean, variance) of importance sampling estimator: (%.4e, %.4e)' % (mean_IS, variance_IS))
     return variance_naive, variance_IS
