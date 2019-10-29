@@ -124,7 +124,7 @@ class Solver():
                 elif self.time_approx == 'inner':
                     self.Phis = [self.z_n, self.y_0]
             else:
-                self.Phis = self.z_n
+                self.Phis = [self.z_n]
         elif self.approx_method == 'value_function':
             self.Phis = self.y_n
 
@@ -230,22 +230,24 @@ class Solver():
 
     # Compute value function at given time.
     # This function should be called only when neural network represents value function, i.e., self.approx_method = 'value_function'
-    def Y_n(self, X, n):
+    def Y_n(self, X, t):
+        n = int(np.ceil(t / self.delta_t))
         if self.time_approx == 'outer':
             return self.y_n[n](X)  # n is the time index 
         elif self.time_approx == 'inner':
             # prepare input by putting time and position together
-            t_X = pt.cat([pt.ones([X.shape[0], 1]) * n * self.delta_t, X], 1)
+            t_X = pt.cat([pt.ones([X.shape[0], 1]) * t, X], 1)
             print ('t_X:', t_X)
             return self.y_n[0](t_X)
 
     # compute control at given time
-    def Z_n(self, X, n):
+    def Z_n(self, X, t):
+        n = int(np.ceil(t / self.delta_t))
         if self.approx_method == 'control':
             if self.time_approx == 'outer':
                 return self.z_n[n](X)
             elif self.time_approx == 'inner':
-                t_X = pt.cat([pt.ones([X.shape[0], 1]) * n * self.delta_t, X], 1)
+                t_X = pt.cat([pt.ones([X.shape[0], 1]) * t, X], 1)
                 return self.z_n(t_X)
         if self.approx_method == 'value_function': 
             # need to compute gradient 
@@ -267,7 +269,7 @@ class Solver():
             t_0 = time.time()
             loss = 0.0 
             for n in range(self.N):
-                loss += pt.sum((- self.Z_n(X, n) - pt.tensor(self.u_true(X, n * self.delta_t_np)).float())**2) * self.delta_t
+                loss += pt.sum((- self.Z_n(X, n*self.delta_t) - pt.tensor(self.u_true(X, n * self.delta_t_np)).float())**2) * self.delta_t
             self.zero_grad()
             loss.backward()
             self.gradient_descent()
@@ -306,7 +308,7 @@ class Solver():
                 if self.approx_method == 'value_function':
                     if n > 0:
                         additional_loss += (self.Y_n(X, n)[:, 0] - Y).pow(2)
-                Z = self.Z_n(X, n)
+                Z = self.Z_n(X, n*self.delta_t)
                 c = pt.zeros(self.K, self.d).to(device)
                 if self.adaptive_forward_process is True:
                     c = -Z

@@ -29,7 +29,6 @@ def plot_loss_logs(experiment_name, models):
 
 def plot_solution(model, x, t, components, ylims=None):
 
-    n = int(np.ceil(t / model.delta_t_np))
     t_range = np.linspace(0, model.T, model.N)
     x_val = pt.linspace(-3, 3, 100)
 
@@ -52,7 +51,7 @@ def plot_solution(model, x, t, components, ylims=None):
         if model.u_true(x_val.unsqueeze(1).repeat(1, model.d), t) is not None:
             ax[0].plot(x_val.numpy(), model.u_true(x_val.unsqueeze(1).repeat(1, model.d), t)[j, :],
                        label='true x_%d' % j)
-        ax[0].plot(x_val.numpy(), -model.Z_n(X, n).detach().numpy()[:, j], '--',
+        ax[0].plot(x_val.numpy(), -model.Z_n(X, t).detach().numpy()[:, j], '--',
                    label='approx x_%d' % j)
     if ylims is not None:
         ax[0].set_ylim(ylims[0][0], ylims[0][1])
@@ -65,7 +64,7 @@ def plot_solution(model, x, t, components, ylims=None):
         if model.u_true(X, n * model.delta_t_np) is not None:
             ax[1].plot(t_range, [model.u_true(X, n * model.delta_t_np)[j].item() for n in
                                  range(model.N)], label='true x_%d' % j)
-        ax[1].plot(t_range, [-model.Z_n(X, n)[0, j].item() for n in range(model.N)], '--',
+        ax[1].plot(t_range, [-model.Z_n(X, t)[0, j].item() for n in range(model.N)], '--',
                    label='approx x_%d' % j)
     if ylims is not None:
         ax[1].set_ylim(ylims[1][0], ylims[1][1])
@@ -103,7 +102,7 @@ def plot_solution_for_DoubleWell1d(model, fig_file_name):
     X = pt.linspace(-xb, xb, 200).unsqueeze(1)
     fig, ax = plt.subplots(1, 2, figsize=(10, 6))
 
-    Z = np.array([-model.Z_n(X, n).detach().numpy().squeeze() for n in range(model.N)])
+    Z = np.array([-model.Z_n(X, n*model.delta_t).detach().numpy().squeeze() for n in range(model.N)])
     im = ax[0].imshow( Z , cmap=cm.jet, extent = [-xb, xb, 0, model.T], vmin=Z.min(), vmax=Z.max(), origin='lower', interpolation='none' )
 
     Z = np.array([model.u_true(X, n * model.delta_t_np).numpy().squeeze() for n in range(model.N)])
@@ -130,7 +129,7 @@ def do_importance_sampling(problem, model, K, control='approx', verbose=True, de
         xi = pt.randn(K, problem.d)
         X = X + problem.b(X) * delta_t + pt.bmm(problem.sigma(X), xi.unsqueeze(2)).squeeze(2) * sq_delta_t
         if control == 'approx':
-            ut = -model.Z_n(X_u, n)
+            ut = -model.Z_n(X_u, n * delta_t)
         if control == 'true':
             ut = pt.tensor(problem.u_true(X_u, n * delta_t).float())
         X_u = X_u + (problem.b(X_u) + pt.bmm(problem.sigma(X_u), ut.unsqueeze(2)).squeeze(2)) * delta_t + pt.bmm(problem.sigma(X_u), xi.unsqueeze(2)).squeeze(2) * sq_delta_t
