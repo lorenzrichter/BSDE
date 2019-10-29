@@ -6,8 +6,9 @@ from utilities import do_importance_sampling, plot_solution_for_DoubleWell1d
 #problem = Mueller2d(T=1.0)
 problem = DoubleWell1D(T=1.0, delta_t = 0.005)
 #problem = LLGC(d=2)
-sol = Solver('test', problem, K=5000, L=1000, time_approx='outer',approx_method='control',lr = 0.05, loss_method='cross_entropy')
+sol = Solver('test', problem, K=100, L=500, time_approx='outer',approx_method='control',lr = 0.05, loss_method='cross_entropy')
 #pt.manual_seed(42)
+#sol.train_LSE_with_reference()
 #sol.train()
 
 sol.load_networks('output/test_2019-10-29.pt')

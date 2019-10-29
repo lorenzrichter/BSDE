@@ -12,7 +12,7 @@ device = pt.device('cpu')
 
 class Solver():
 
-    def __init__(self, name, problem, lr=0.001, L=10000, K=50, delta_t=0.01, approx_method='control', loss_method='variance', time_approx='outer', adaptive_forward_process=False, random_X_0=False, metastability_logs=None, print_every=100, save_results=True, u_l2_error_flag=False):
+    def __init__(self, name, problem, lr=0.001, L=10000, K=50, delta_t=0.01, approx_method='control', loss_method='variance', time_approx='outer', adaptive_forward_process=False, random_X_0=False, metastability_logs=None, print_every=2, save_results=True, u_l2_error_flag=False):
         self.problem = problem
         self.name = name
         self.date = date.today().strftime('%Y-%m-%d')
@@ -39,7 +39,12 @@ class Solver():
         self.approx_method = approx_method
         self.adaptive_forward_process = adaptive_forward_process
         self.learn_Y_0 = False
+
+        self.has_ref_solution = hasattr(problem, 'ref_solution')
         self.u_l2_error_flag = u_l2_error_flag
+        if self.has_ref_solution == False :
+            self.u_l2_error_flag = False
+
         # Y0 will be learned when we use 2nd moment as loss function
         if self.loss_method == 'moment':
             self.learn_Y_0 = True
@@ -246,6 +251,43 @@ class Solver():
             # need to compute gradient 
             return self.compute_grad_Y(X, n)
 
+    def train_LSE_with_reference(self):
+        
+        if self.approx_method != 'control' :
+            print ('only learn control with reference solution!')
+        if self.has_ref_solution == False :
+            print ('reference solution is needed!')
+
+        print('\nd = %d, L = %d, K = %d, delta_t = %.2e, N = %d, lr = %.2e, %s, %s, %s, %s\n' % (self.d, self.L, self.K, self.delta_t_np, self.N, self.lr, self.approx_method, self.time_approx, self.loss_method, 'adaptive' if self.adaptive_forward_process else ''))
+
+        xb = 2.0
+        X = pt.linspace(-xb, xb, 200).unsqueeze(1)
+
+        for l in range(self.L):
+            t_0 = time.time()
+            loss = 0.0 
+            for n in range(self.N):
+                loss += pt.sum((- self.Z_n(X, n) - pt.tensor(self.u_true(X, n * self.delta_t_np)).float())**2) * self.delta_t
+            self.zero_grad()
+            loss.backward()
+            self.gradient_descent()
+
+            self.loss_log.append(loss.item())
+
+            t_1 = time.time()
+            self.times.append(t_1 - t_0)
+
+            if l % self.print_every == 0:
+                string = ('%d - loss: %.4e - time/iter: %.2fs' % (l, self.loss_log[-1], np.mean(self.times[-self.print_every:])))
+                print (string)
+                print ('   l_inf norm of gradient: %.3e\n' %
+                        (np.array([max([pt.norm(params.grad.data,
+                            float('inf')).item() for params in filter(lambda
+                                params: params.requires_grad,
+                                phi.parameters())]) for phi in self.Phis]).max()) )
+
+        self.save_networks()
+
     def train(self):
         print('\nd = %d, L = %d, K = %d, delta_t = %.2e, N = %d, lr = %.2e, %s, %s, %s, %s\n'
               % (self.d, self.L, self.K, self.delta_t_np, self.N, self.lr, self.approx_method, self.time_approx, self.loss_method, 'adaptive' if self.adaptive_forward_process else ''))
@@ -273,7 +315,7 @@ class Solver():
                 if 'relative_entropy' in self.loss_method:
                     Z_sum += 0.5 * pt.sum(Z**2, 1) * self.delta_t
 
-                if self.u_l2_error_flag == True:
+                if self.u_l2_error_flag == True :
                     u_L2 += pt.sum((-Z - pt.tensor(self.u_true(X, n * self.delta_t_np)).t().float())**2 * self.delta_t, 1)
 
             # total loss function

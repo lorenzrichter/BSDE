@@ -80,7 +80,7 @@ class NN(pt.nn.Module):
 class DenseNet(pt.nn.Module):
     def __init__(self, d_in, d_out, lr):
         super(DenseNet, self).__init__()
-        self.nn_dims = [d_in, 5, 5, d_out]
+        self.nn_dims = [d_in, 10, 10, d_out]
         self.W = [item for sublist in
                   [[pt.nn.Parameter(pt.randn(sum(self.nn_dims[:i + 1]), self.nn_dims[i + 1],
                                              requires_grad=True) * 0.1),

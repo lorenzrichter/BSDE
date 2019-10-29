@@ -99,15 +99,14 @@ def plot_solution(model, x, t, components, ylims=None):
     return fig
 
 def plot_solution_for_DoubleWell1d(model, fig_file_name):
-    xb = 1.0
+    xb = 2.0
     X = pt.linspace(-xb, xb, 200).unsqueeze(1)
     fig, ax = plt.subplots(1, 2, figsize=(10, 6))
 
     Z = np.array([-model.Z_n(X, n).detach().numpy().squeeze() for n in range(model.N)])
-
     im = ax[0].imshow( Z , cmap=cm.jet, extent = [-xb, xb, 0, model.T], vmin=Z.min(), vmax=Z.max(), origin='lower', interpolation='none' )
 
-#    Z = np.array([model.u_true(X, n * model.delta_t_np).numpy().squeeze() for n in range(model.N)])
+    Z = np.array([model.u_true(X, n * model.delta_t_np).numpy().squeeze() for n in range(model.N)])
     im = ax[1].imshow( Z , cmap=cm.jet, extent = [-xb, xb, 0, model.T], vmin=Z.min(), vmax=Z.max(), origin='lower', interpolation='none' )
 
     cax = fig.add_axes([0.08, 0.04, .84, 0.04])
