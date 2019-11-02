@@ -9,7 +9,7 @@ from scipy import interpolate
 from scipy.linalg import expm, inv, solve_banded
 
 
-device = pt.device('cpu')
+device = pt.device('cuda')
 
 
 # to do:
@@ -117,11 +117,10 @@ class LQGC():
 
 
 class DoubleWell():
-    def __init__(self, name='Double well', d=1, T=1, delta_t=0.005, alpha=1, beta=1):
+    def __init__(self, name='Double well', d=1, T=1, alpha=1, beta=1):
         self.name = name
         self.d = d
         self.T = T
-        self.delta_t = delta_t
         self.alpha = alpha
         self.beta = beta
         self.B = pt.eye(self.d).to(device)
@@ -149,13 +148,12 @@ class DoubleWell():
         return (self.alpha * (x - 1)**2).squeeze()
 
 
-    def compute_reference_solution(self):
+    def compute_reference_solution(self, delta_t=0.005, xb=2.5, nx=1000):
 
-        # range of x, [-xb, xb]
-        self.xb = 2.5
-        # number of discrete interval
-        self.nx = 1000
+        self.xb = xb # range of x, [-xb, xb]
+        self.nx = nx # number of discrete interval
         self.dx = 2.0 * self.xb / self.nx
+        self.delta_t = delta_t
 
         beta = 2
 
@@ -211,7 +209,7 @@ class DoubleWell():
         return np.array(- log(self.psi[n, i])).reshape([1, len(i)])
 
     def u_true(self, x, t):
-        i = np.floor((x.squeeze(0) + self.xb) / self.dx).long()
+        i = np.floor((np.clip(x, -self.xb, self.xb - 2 * self.dx).squeeze(0) + self.xb) / self.dx).long()
         i[-1] -= 2
         n = int(np.ceil(t / self.delta_t))
         return np.array(self.u[n, i]).reshape([1, len(i)])

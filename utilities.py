@@ -7,7 +7,7 @@ import numpy as np
 import torch as pt
 
 
-device = pt.device('cpu')
+device = pt.device('cuda')
 
 
 def plot_loss_logs(experiment_name, models):

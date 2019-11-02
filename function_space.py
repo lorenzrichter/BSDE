@@ -58,6 +58,7 @@ class Affine(pt.nn.Module):
     def forward(self, x):
         return pt.mm(self.A, x.t()).t() + self.b
 
+device = pt.device('cuda')
 
 class Sines(pt.nn.Module):
     # linear comibation of M sine functions with frequencies omega
@@ -66,7 +67,7 @@ class Sines(pt.nn.Module):
         super(Sines, self).__init__()
         pt.manual_seed(seed)
         self.alpha = pt.nn.Parameter(pt.randn(M, 1), requires_grad=True)
-        self.omega = pt.linspace(1, M, M).unsqueeze(0)
+        self.omega = pt.linspace(1, M, M).unsqueeze(0).to(device)
 
         self.register_parameter('param alpha', self.alpha)
         self.adam = pt.optim.Adam(self.parameters(), lr=lr)

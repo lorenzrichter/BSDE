@@ -15,7 +15,7 @@ from function_space import DenseNet, Linear, NN, SingleParam
 from utilities import do_importance_sampling
 
 
-device = pt.device('cpu')
+device = pt.device('cuda')
 
 
 # to do:
@@ -28,9 +28,9 @@ class Solver():
 
     def __init__(self, name, problem, lr=0.001, L=10000, K=50, delta_t=0.05,
                  approx_method='control', loss_method='variance', time_approx='outer',
-                 learn_Y_0=False, adaptive_forward_process=True, early_stopping_time=10000,
-                 random_X_0=False, compute_gradient_variance=0, IS_variance_K=0,
-                 metastability_logs=None, print_every=100, seed=42, save_results=False):
+                 learn_Y_0=False, adaptive_forward_process=True, detach_forward=False,
+                 early_stopping_time=10000, random_X_0=False, compute_gradient_variance=0,
+                 IS_variance_K=0, metastability_logs=None, print_every=100, seed=42, save_results=False):
         self.problem = problem
         self.name = name
         self.date = date.today().strftime('%Y-%m-%d')
@@ -55,6 +55,7 @@ class Solver():
         self.approx_method = approx_method
         self.learn_Y_0 = learn_Y_0
         self.adaptive_forward_process = adaptive_forward_process
+        self.detach_forward = detach_forward
         self.early_stopping_time = early_stopping_time
         if self.loss_method == 'moment':
             self.learn_Y_0 = True
@@ -321,6 +322,8 @@ class Solver():
                 c = pt.zeros(self.d, 1).to(device)
                 if self.adaptive_forward_process is True:
                     c = -Z.t()
+                    if self.detach_forward is True:
+                        c = c.detach()
                 X = (X + (self.b(X) + pt.mm(self.sigma(X), c)[:, 0]) * self.delta_t
                      + pt.mm(self.sigma(X), xi[:, :, n + 1].t()).t() * self.sq_delta_t)
                 Y = (Y + (self.h(self.delta_t * n, X, Y, Z) + pt.mm(Z, c)[:, 0]) * self.delta_t
